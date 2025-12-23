@@ -3,11 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Collaborative Whiteboard with Real-time Chat</title>
-    <!-- Add Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
-    
+    <title>Collaborative Whiteboard with Chat</title>
     <style>
         * {
             margin: 0;
@@ -238,30 +234,6 @@
             text-align: center;
         }
         
-        .message.user {
-            background: #e3f2fd;
-            border-left: 4px solid #667eea;
-        }
-        
-        .message.other {
-            background: #f0f0f0;
-            border-left: 4px solid #999;
-        }
-        
-        .message-sender {
-            font-weight: bold;
-            font-size: 12px;
-            color: #555;
-            margin-bottom: 3px;
-        }
-        
-        .message-time {
-            font-size: 10px;
-            color: #888;
-            text-align: right;
-            margin-top: 3px;
-        }
-        
         .chat-input-container {
             padding: 15px;
             border-top: 1px solid #e0e0e0;
@@ -346,56 +318,6 @@
             .login-screen {
                 padding: 20px;
             }
-            /* Mobile-specific fixes */
-@media (max-width: 768px) {
-    .chat-container {
-        display: flex !important;
-        flex-direction: column;
-        height: 40vh !important;
-        min-height: 250px !important;
-        max-height: 400px !important;
-    }
-    
-    .chat-messages {
-        flex: 1;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-        padding: 10px;
-    }
-    
-    .chat-input-container {
-        padding: 10px;
-        border-top: 1px solid #ddd;
-        background: #f8f9fa;
-    }
-    
-    .chat-input-wrapper {
-        display: flex;
-        gap: 8px;
-    }
-    
-    #chatInput {
-        flex: 1;
-        padding: 12px;
-        font-size: 16px; /* Prevents zoom on iOS */
-        border: 2px solid #667eea;
-        border-radius: 8px;
-    }
-    
-    #sendBtn {
-        padding: 12px 20px;
-        font-size: 16px;
-        white-space: nowrap;
-    }
-    
-    /* Prevent keyboard from hiding input on mobile */
-    .chat-input-container {
-        position: sticky;
-        bottom: 0;
-        background: white;
-        z-index: 100;
-    }
-}
         }
     </style>
 </head>
@@ -403,7 +325,7 @@
     <div class="container">
         <!-- Login Screen -->
         <div class="login-screen" id="loginScreen">
-            <h1>Collaborative Whiteboard with Real-time Chat</h1>
+            <h1>Collaborative Whiteboard with Chat</h1>
             <p>Enter the password to access the shared whiteboard</p>
             <input 
                 type="password" 
@@ -414,17 +336,17 @@
             <button id="loginBtn">Enter Whiteboard</button>
             <div class="error" id="errorMessage">Incorrect password. Try again.</div>
             <p style="margin-top: 20px; font-size: 12px; color: #999;">
-                Default password: whiteboard123
+                Default password: test2
             </p>
         </div>
         
         <!-- Whiteboard Screen -->
         <div class="whiteboard-screen" id="whiteboardScreen">
             <div class="header">
-                <h2>Shared Whiteboard - Draw & Chat in Real-time!</h2>
+                <h2>Shared Whiteboard - Draw & Chat Together!</h2>
                 <div class="status-indicator">
                     <div class="status-dot"></div>
-                    <span id="connectionStatus">Connecting...</span>
+                    <span>Connected</span>
                 </div>
             </div>
             
@@ -452,11 +374,10 @@
                 <div class="chat-container">
                     <div class="chat-header">
                         <h3>Live Chat</h3>
-                        <div style="font-size: 12px; color: #666;">Connected users: <span id="userCount">1</span></div>
                     </div>
                     
                     <div class="chat-messages" id="chatMessages">
-                        <div class="message system">Welcome to the chat! Messages appear here in real-time.</div>
+                        <div class="message system">Chat started. Type your message below!</div>
                     </div>
                     
                     <div class="chat-input-container">
@@ -470,7 +391,7 @@
                             <button id="sendBtn">Send</button>
                         </div>
                         <div style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
-                            Press Enter to send • Messages sync instantly
+                            Note: Messages are shared in real-time but not saved
                         </div>
                     </div>
                 </div>
@@ -479,22 +400,15 @@
     </div>
 
     <script>
-        // ======================= CONFIGURATION =======================
         // Password Configuration
-        const CORRECT_PASSWORD = "star"; // Change this to your desired password
+        const CORRECT_PASSWORD = "dory"; // Change this to your desired password
         
-        // Firebase Configuration (FREE TIER - 1GB storage)
-        const firebaseConfig = {
-    apiKey: "AIzaSyC3Qv8PlL2PTvZSl2DY_wB56DpSCo32bEM",
-    authDomain: "realtime-whiteboard-chat.firebaseapp.com",
-    databaseURL: "https://realtime-whiteboard-chat-default-rtdb.firebaseio.com",
-    projectId: "realtime-whiteboard-chat",
-    storageBucket: "realtime-whiteboard-chat.appspot.com",
-    messagingSenderId: "896234267240",
-    appId: "1:896234267240:web:4fc28455b8b7a62c3ee9ef"
-};
+        // Chat Configuration
+        const CHAT_KEY = 'whiteboard_chat_message';
+        const LAST_SENDER_KEY = 'whiteboard_last_sender';
+        const TIMESTAMP_KEY = 'whiteboard_message_timestamp';
+        const CHAT_EXPIRE_TIME = 30000; // 30 seconds (message disappears after 30 seconds if no one updates)
         
-        // ======================= INITIALIZATION =======================
         // DOM Elements
         const loginScreen = document.getElementById('loginScreen');
         const whiteboardScreen = document.getElementById('whiteboardScreen');
@@ -506,15 +420,6 @@
         const chatInput = document.getElementById('chatInput');
         const sendBtn = document.getElementById('sendBtn');
         const chatMessages = document.getElementById('chatMessages');
-        const connectionStatus = document.getElementById('connectionStatus');
-        const userCount = document.getElementById('userCount');
-        
-        // Firebase Variables
-        let firebaseApp;
-        let database;
-        let chatRef;
-        let usersRef;
-        let currentUserRef;
         
         // Whiteboard State
         let current = {
@@ -525,328 +430,10 @@
         let drawing = false;
         let points = [];
         
-        // User Information
+        // User ID for chat (simple random identifier)
         let userId = 'user_' + Math.random().toString(36).substr(2, 9);
-        let username = 'User_' + Math.floor(Math.random() * 1000);
-        let isConnected = false;
         
-        // ======================= FIREBASE SETUP =======================
-        function initializeFirebase() {
-    try {
-        console.log('Starting Firebase initialization...');
-        
-        // Initialize Firebase with updated configuration
-        firebaseApp = firebase.initializeApp(firebaseConfig);
-        database = firebase.database();
-        
-        // Set up database references
-        chatRef = database.ref('chat/messages');
-        usersRef = database.ref('chat/users');
-        currentUserRef = usersRef.child(userId);
-        
-        console.log('Firebase initialized, setting up listeners...');
-        
-        // Set up real-time message listener
-        chatRef.limitToLast(20).on('child_added', (snapshot) => {
-            const message = snapshot.val();
-            if (message && message.userId !== userId) {
-                console.log('New message received:', message.text);
-                displayMessage(message.text, message.username, message.timestamp, 'other');
-            }
-        });
-        
-        // Set up user count listener
-        usersRef.on('value', (snapshot) => {
-            if (snapshot.exists()) {
-                const users = snapshot.val();
-                const count = Object.keys(users).length;
-                userCount.textContent = count;
-                console.log('User count updated:', count);
-            } else {
-                userCount.textContent = '1';
-            }
-        });
-        
-        // Set up error listener for database connection
-        database.ref('.info/connected').on('value', (snapshot) => {
-            if (snapshot.val() === true) {
-                console.log('Firebase Realtime Database connected');
-                connectionStatus.textContent = 'Connected';
-                connectionStatus.style.color = '#4cd137';
-                showSystemMessage('Connected to real-time chat!');
-            } else {
-                console.log('Firebase Realtime Database disconnected');
-                connectionStatus.textContent = 'Disconnected';
-                connectionStatus.style.color = '#ff4757';
-                showSystemMessage('Connection lost. Reconnecting...');
-            }
-        });
-        
-        // Register current user
-        const userData = {
-            username: username,
-            connected: true,
-            lastSeen: firebase.database.ServerValue.TIMESTAMP,
-            userAgent: navigator.userAgent
-        };
-        
-        currentUserRef.set(userData)
-            .then(() => {
-                console.log('User registered successfully:', userId);
-            })
-            .catch((error) => {
-                console.error('Error registering user:', error);
-            });
-        
-        // Set up disconnect cleanup
-        currentUserRef.onDisconnect().remove()
-            .then(() => {
-                console.log('On-disconnect cleanup registered');
-            })
-            .catch((error) => {
-                console.error('Error setting up disconnect cleanup:', error);
-            });
-        
-        // Update connection status
-        connectionStatus.textContent = 'Connected';
-        connectionStatus.style.color = '#4cd137';
-        
-        // Set connection flag
-        isConnected = true;
-        
-        // Show welcome message after a short delay
-        setTimeout(() => {
-            showSystemMessage(`Welcome ${username}! You're now connected to the real-time chat.`);
-            showSystemMessage('Type a message and press Enter to chat with others.');
-        }, 1000);
-        
-        console.log('Firebase setup complete');
-        
-    } catch (error) {
-        console.error('Firebase initialization error:', error);
-        
-        // Update UI to show error
-        connectionStatus.textContent = 'Connection Failed';
-        connectionStatus.style.color = '#ff4757';
-        
-        // Show helpful error message
-        let errorMessage = 'Chat connection failed. ';
-        
-        if (error.code === 'PERMISSION_DENIED') {
-            errorMessage += 'Firebase permissions issue. Using local mode.';
-        } else if (error.code === 'app/no-app') {
-            errorMessage += 'Firebase app not configured. Check API keys.';
-        } else if (navigator.onLine === false) {
-            errorMessage += 'No internet connection. Using local mode.';
-        } else {
-            errorMessage += 'Error: ' + error.message + '. Using local mode.';
-        }
-        
-        showSystemMessage(errorMessage);
-        
-        // Enable local fallback mode
-        enableLocalChatMode();
-    }
-}
-
-// Local fallback mode function
-function enableLocalChatMode() {
-    console.log('Enabling local chat mode');
-    isConnected = false;
-    
-    // Simple local storage for chat
-    window.localChat = {
-        messages: [],
-        
-        send: function(text) {
-            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            
-            // Add to local array
-            this.messages.push({
-                text: text,
-                username: 'You',
-                timestamp: timestamp,
-                type: 'user'
-            });
-            
-            // Display immediately
-            displayMessage(text, 'You', timestamp, 'user');
-            
-            // Store in localStorage for persistence
-            localStorage.setItem('local_chat_last_message', JSON.stringify({
-                text: text,
-                time: timestamp
-            }));
-            
-            return true;
-        },
-        
-        loadMessages: function() {
-            const saved = localStorage.getItem('local_chat_last_message');
-            if (saved) {
-                try {
-                    const msg = JSON.parse(saved);
-                    displayMessage(msg.text, 'You', msg.time, 'user');
-                } catch (e) {
-                    console.error('Error loading saved message:', e);
-                }
-            }
-        }
-    };
-    
-    // Load any saved messages
-    window.localChat.loadMessages();
-}
-        
-        function setupFirebaseListeners() {
-            // Listen for new chat messages
-            chatRef.limitToLast(20).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message && message.userId !== userId) {
-                    displayMessage(message.text, message.username, message.timestamp, 'other');
-                }
-            });
-            
-            // Listen for user count changes
-            usersRef.on('value', (snapshot) => {
-                if (snapshot.exists()) {
-                    const users = snapshot.val();
-                    const count = Object.keys(users).length;
-                    userCount.textContent = count;
-                } else {
-                    userCount.textContent = '1';
-                }
-            });
-            
-            // Set up presence system
-            currentUserRef.set({
-                username: username,
-                connected: true,
-                lastSeen: firebase.database.ServerValue.TIMESTAMP
-            });
-            
-            // Remove user when they disconnect
-            currentUserRef.onDisconnect().remove();
-        }
-        
-        // ======================= CHAT FUNCTIONS =======================
-        function sendMessage() {
-    const messageText = chatInput.value.trim();
-    
-    if (!messageText) {
-        chatInput.focus();
-        return;
-    }
-    
-    // Clear input immediately for better UX
-    chatInput.value = '';
-    
-    if (!isConnected) {
-        // Use local mode
-        if (window.localChat && window.localChat.send) {
-            window.localChat.send(messageText);
-        } else {
-            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            displayMessage(messageText, 'You', timestamp, 'user');
-        }
-        chatInput.focus();
-        return;
-    }
-    
-    const message = {
-        text: messageText,
-        userId: userId,
-        username: username,
-        timestamp: firebase.database.ServerValue.TIMESTAMP,
-        userAgent: navigator.userAgent.substring(0, 50) // For debugging
-    };
-    
-    // Show sending indicator
-    const sendingIndicator = document.createElement('div');
-    sendingIndicator.className = 'message system';
-    sendingIndicator.textContent = 'Sending...';
-    sendingIndicator.id = 'sending-indicator';
-    chatMessages.appendChild(sendingIndicator);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-    
-    // Push to Firebase
-    chatRef.push(message)
-        .then(() => {
-            // Remove sending indicator
-            const indicator = document.getElementById('sending-indicator');
-            if (indicator) indicator.remove();
-            
-            // Display locally immediately
-            const displayTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            displayMessage(messageText, 'You', displayTime, 'user');
-            
-            // Refocus input
-            chatInput.focus();
-            
-            console.log('Message sent successfully');
-        })
-        .catch((error) => {
-            console.error('Error sending message:', error);
-            
-            // Remove sending indicator
-            const indicator = document.getElementById('sending-indicator');
-            if (indicator) indicator.remove();
-            
-            // Show error
-            showSystemMessage('Failed to send: ' + error.message);
-            
-            // Try local fallback
-            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            displayMessage(messageText, 'You', timestamp, 'user');
-            
-            // Refocus input
-            chatInput.focus();
-        });
-}
-        
-        function displayMessage(text, sender, timestamp, type = 'user') {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
-            
-            const time = timestamp ? 
-                (typeof timestamp === 'number' ? 
-                    new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 
-                    timestamp) : 
-                new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            
-            messageDiv.innerHTML = `
-                <div class="message-sender">${sender}</div>
-                <div class="message-text">${escapeHtml(text)}</div>
-                <div class="message-time">${time}</div>
-            `;
-            
-            chatMessages.appendChild(messageDiv);
-            
-            // Auto scroll to bottom
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            // Keep only last 50 messages
-            const allMessages = chatMessages.querySelectorAll('.message');
-            if (allMessages.length > 50) {
-                allMessages[0].remove();
-            }
-        }
-        
-        function showSystemMessage(text) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message system';
-            messageDiv.textContent = text;
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        // ======================= WHITEBOARD FUNCTIONS =======================
+        // Initialize Canvas
         function initCanvas() {
             canvas.width = Math.max(1200, window.innerWidth - 40);
             canvas.height = 600;
@@ -866,11 +453,16 @@ function enableLocalChatMode() {
                 img.src = saved;
             }
             
+            // Setup event listeners
             setupCanvasEvents();
             setupToolEvents();
             setupChatEvents();
+            
+            // Start checking for chat updates
+            startChatPolling();
         }
         
+        // Setup Canvas Drawing Events
         function setupCanvasEvents() {
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mousemove', draw);
@@ -905,7 +497,9 @@ function enableLocalChatMode() {
             });
         }
         
+        // Setup Tool Events
         function setupToolEvents() {
+            // Tool buttons
             document.querySelectorAll('.tool-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
@@ -922,6 +516,7 @@ function enableLocalChatMode() {
                 });
             });
             
+            // Color picker
             document.querySelectorAll('.color-option').forEach(colorBtn => {
                 colorBtn.addEventListener('click', function() {
                     if (current.tool === 'eraser') return;
@@ -934,6 +529,7 @@ function enableLocalChatMode() {
                 });
             });
             
+            // Clear button
             document.getElementById('clearBtn').addEventListener('click', function() {
                 if (confirm('Are you sure you want to clear the entire board?')) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -941,6 +537,7 @@ function enableLocalChatMode() {
                 }
             });
             
+            // Line width button
             document.getElementById('lineWidthBtn').addEventListener('click', function() {
                 const sizes = [
                     {name: 'Small', size: 2},
@@ -956,19 +553,102 @@ function enableLocalChatMode() {
                 this.textContent = `Size: ${sizes[nextIndex].name}`;
             });
             
+            // Auto-save every 2 seconds
             setInterval(saveDrawing, 2000);
         }
         
+        // Setup Chat Events
         function setupChatEvents() {
+            // Send message on button click
             sendBtn.addEventListener('click', sendMessage);
             
+            // Send message on Enter key
             chatInput.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     sendMessage();
                 }
             });
+            
+            // When user starts typing, clear any existing message
+            chatInput.addEventListener('input', function() {
+                // When someone starts typing, the old message disappears from localStorage
+                // This triggers other users to see the message was cleared
+                localStorage.removeItem(CHAT_KEY);
+                localStorage.removeItem(LAST_SENDER_KEY);
+                localStorage.removeItem(TIMESTAMP_KEY);
+            });
         }
         
+        // Chat Functions
+        function sendMessage() {
+            const message = chatInput.value.trim();
+            
+            if (message) {
+                // Save message to localStorage with timestamp
+                localStorage.setItem(CHAT_KEY, message);
+                localStorage.setItem(LAST_SENDER_KEY, userId);
+                localStorage.setItem(TIMESTAMP_KEY, Date.now().toString());
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Display message locally
+                displayMessage(message, 'You');
+            }
+        }
+        
+        function displayMessage(message, sender) {
+            // Clear chat messages (since we only show one message at a time)
+            chatMessages.innerHTML = '';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.textContent = `${sender}: ${message}`;
+            
+            chatMessages.appendChild(messageDiv);
+            
+            // Auto scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function checkForNewMessages() {
+            const message = localStorage.getItem(CHAT_KEY);
+            const lastSender = localStorage.getItem(LAST_SENDER_KEY);
+            const timestamp = localStorage.getItem(TIMESTAMP_KEY);
+            
+            if (message && lastSender && timestamp) {
+                const messageTime = parseInt(timestamp);
+                const currentTime = Date.now();
+                
+                // Check if message is expired (30 seconds old)
+                if (currentTime - messageTime > CHAT_EXPIRE_TIME) {
+                    // Clear expired message
+                    localStorage.removeItem(CHAT_KEY);
+                    localStorage.removeItem(LAST_SENDER_KEY);
+                    localStorage.removeItem(TIMESTAMP_KEY);
+                    
+                    // Clear display
+                    chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
+                } 
+                // Only display if message is from another user
+                else if (lastSender !== userId) {
+                    displayMessage(message, 'Other User');
+                }
+            } else {
+                // No active message
+                chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
+            }
+        }
+        
+        function startChatPolling() {
+            // Check for new messages every 500ms
+            setInterval(checkForNewMessages, 500);
+            
+            // Initial check
+            checkForNewMessages();
+        }
+        
+        // Drawing Functions
         function startDrawing(e) {
             drawing = true;
             points = [{
@@ -1007,62 +687,32 @@ function enableLocalChatMode() {
         function saveDrawing() {
             localStorage.setItem('whiteboard', canvas.toDataURL());
         }
-        // Mobile keyboard handling
-function setupMobileKeyboard() {
-    const chatInput = document.getElementById('chatInput');
-    const chatMessages = document.getElementById('chatMessages');
-    
-    chatInput.addEventListener('focus', function() {
-        // On mobile, scroll chat to bottom when input is focused
-        setTimeout(() => {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            // For mobile, add extra scroll
-            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-                setTimeout(() => {
-                    window.scrollTo(0, document.body.scrollHeight);
-                }, 300);
-            }
-        }, 100);
-    });
-    
-    chatInput.addEventListener('blur', function() {
-        // Scroll back when keyboard closes
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-            }, 100);
-        }
-    });
-}
-
-// Call this after DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    setupMobileKeyboard();
-});
         
-        // ======================= LOGIN FUNCTIONS =======================
+        // Password Login
         function checkPassword() {
             const enteredPassword = passwordInput.value;
             
             if (enteredPassword === CORRECT_PASSWORD) {
+                // Store login state
                 sessionStorage.setItem('whiteboard_authenticated', 'true');
                 
+                // Switch to whiteboard
                 loginScreen.style.display = 'none';
                 whiteboardScreen.style.display = 'block';
                 
+                // Initialize the whiteboard
                 initCanvas();
-                initializeFirebase();
                 
+                // Show welcome message
                 setTimeout(() => {
-                    showSystemMessage(`Welcome ${username}! You're now connected to the real-time chat.`);
-                }, 1000);
-                
+                    alert('Welcome to the collaborative whiteboard with chat!\n\nFeatures:\n1. Draw with different colors\n2. Use eraser to remove\n3. Chat with others in real-time\n4. Messages disappear when someone starts typing new one\n\nChanges are automatically saved!');
+                }, 500);
             } else {
                 errorMessage.style.display = 'block';
                 passwordInput.value = '';
                 passwordInput.focus();
                 
+                // Shake animation for error
                 loginScreen.style.animation = 'none';
                 setTimeout(() => {
                     loginScreen.style.animation = 'shake 0.5s';
@@ -1070,7 +720,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // ======================= EVENT LISTENERS =======================
+        // Event Listeners for Login
         loginBtn.addEventListener('click', checkPassword);
         passwordInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -1078,6 +728,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
+        // Check if already authenticated
         window.addEventListener('load', function() {
             const style = document.createElement('style');
             style.textContent = `
@@ -1089,20 +740,13 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
             document.head.appendChild(style);
             
+            // Check session storage
             if (sessionStorage.getItem('whiteboard_authenticated') === 'true') {
                 loginScreen.style.display = 'none';
                 whiteboardScreen.style.display = 'block';
                 initCanvas();
-                initializeFirebase();
             } else {
                 passwordInput.focus();
-            }
-        });
-        
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function() {
-            if (currentUserRef) {
-                currentUserRef.remove();
             }
         });
     </script>
