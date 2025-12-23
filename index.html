@@ -346,6 +346,56 @@
             .login-screen {
                 padding: 20px;
             }
+            /* Mobile-specific fixes */
+@media (max-width: 768px) {
+    .chat-container {
+        display: flex !important;
+        flex-direction: column;
+        height: 40vh !important;
+        min-height: 250px !important;
+        max-height: 400px !important;
+    }
+    
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 10px;
+    }
+    
+    .chat-input-container {
+        padding: 10px;
+        border-top: 1px solid #ddd;
+        background: #f8f9fa;
+    }
+    
+    .chat-input-wrapper {
+        display: flex;
+        gap: 8px;
+    }
+    
+    #chatInput {
+        flex: 1;
+        padding: 12px;
+        font-size: 16px; /* Prevents zoom on iOS */
+        border: 2px solid #667eea;
+        border-radius: 8px;
+    }
+    
+    #sendBtn {
+        padding: 12px 20px;
+        font-size: 16px;
+        white-space: nowrap;
+    }
+    
+    /* Prevent keyboard from hiding input on mobile */
+    .chat-input-container {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        z-index: 100;
+    }
+}
         }
     </style>
 </head>
@@ -431,18 +481,18 @@
     <script>
         // ======================= CONFIGURATION =======================
         // Password Configuration
-        const CORRECT_PASSWORD = "whiteboard123"; // Change this to your desired password
+        const CORRECT_PASSWORD = "star"; // Change this to your desired password
         
         // Firebase Configuration (FREE TIER - 1GB storage)
         const firebaseConfig = {
-            apiKey: "AIzaSyBAOsmQRQptAHmKBTRKv4Exfn4aU6fX6so",
-            authDomain: "collab-whiteboard-chat.firebaseapp.com",
-            databaseURL: "https://collab-whiteboard-chat-default-rtdb.firebaseio.com",
-            projectId: "collab-whiteboard-chat",
-            storageBucket: "collab-whiteboard-chat.appspot.com",
-            messagingSenderId: "218758482969",
-            appId: "1:218758482969:web:054cfd42d63a8d1ccf690d"
-        };
+    apiKey: "AIzaSyC3Qv8PlL2PTvZSl2DY_wB56DpSCo32bEM",
+    authDomain: "realtime-whiteboard-chat.firebaseapp.com",
+    databaseURL: "https://realtime-whiteboard-chat-default-rtdb.firebaseio.com",
+    projectId: "realtime-whiteboard-chat",
+    storageBucket: "realtime-whiteboard-chat.appspot.com",
+    messagingSenderId: "896234267240",
+    appId: "1:896234267240:web:4fc28455b8b7a62c3ee9ef"
+};
         
         // ======================= INITIALIZATION =======================
         // DOM Elements
@@ -482,32 +532,171 @@
         
         // ======================= FIREBASE SETUP =======================
         function initializeFirebase() {
-            try {
-                // Initialize Firebase
-                firebaseApp = firebase.initializeApp(firebaseConfig);
-                database = firebase.database();
-                
-                // Set up references
-                chatRef = database.ref('chat/messages');
-                usersRef = database.ref('chat/users');
-                currentUserRef = usersRef.child(userId);
-                
-                // Set up real-time listeners
-                setupFirebaseListeners();
-                
-                // Update connection status
+    try {
+        console.log('Starting Firebase initialization...');
+        
+        // Initialize Firebase with updated configuration
+        firebaseApp = firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        
+        // Set up database references
+        chatRef = database.ref('chat/messages');
+        usersRef = database.ref('chat/users');
+        currentUserRef = usersRef.child(userId);
+        
+        console.log('Firebase initialized, setting up listeners...');
+        
+        // Set up real-time message listener
+        chatRef.limitToLast(20).on('child_added', (snapshot) => {
+            const message = snapshot.val();
+            if (message && message.userId !== userId) {
+                console.log('New message received:', message.text);
+                displayMessage(message.text, message.username, message.timestamp, 'other');
+            }
+        });
+        
+        // Set up user count listener
+        usersRef.on('value', (snapshot) => {
+            if (snapshot.exists()) {
+                const users = snapshot.val();
+                const count = Object.keys(users).length;
+                userCount.textContent = count;
+                console.log('User count updated:', count);
+            } else {
+                userCount.textContent = '1';
+            }
+        });
+        
+        // Set up error listener for database connection
+        database.ref('.info/connected').on('value', (snapshot) => {
+            if (snapshot.val() === true) {
+                console.log('Firebase Realtime Database connected');
                 connectionStatus.textContent = 'Connected';
                 connectionStatus.style.color = '#4cd137';
-                
-                isConnected = true;
-                
-            } catch (error) {
-                console.error('Firebase initialization error:', error);
-                connectionStatus.textContent = 'Connection Failed';
+                showSystemMessage('Connected to real-time chat!');
+            } else {
+                console.log('Firebase Realtime Database disconnected');
+                connectionStatus.textContent = 'Disconnected';
                 connectionStatus.style.color = '#ff4757';
-                showSystemMessage('Chat connection failed. Using local mode only.');
+                showSystemMessage('Connection lost. Reconnecting...');
+            }
+        });
+        
+        // Register current user
+        const userData = {
+            username: username,
+            connected: true,
+            lastSeen: firebase.database.ServerValue.TIMESTAMP,
+            userAgent: navigator.userAgent
+        };
+        
+        currentUserRef.set(userData)
+            .then(() => {
+                console.log('User registered successfully:', userId);
+            })
+            .catch((error) => {
+                console.error('Error registering user:', error);
+            });
+        
+        // Set up disconnect cleanup
+        currentUserRef.onDisconnect().remove()
+            .then(() => {
+                console.log('On-disconnect cleanup registered');
+            })
+            .catch((error) => {
+                console.error('Error setting up disconnect cleanup:', error);
+            });
+        
+        // Update connection status
+        connectionStatus.textContent = 'Connected';
+        connectionStatus.style.color = '#4cd137';
+        
+        // Set connection flag
+        isConnected = true;
+        
+        // Show welcome message after a short delay
+        setTimeout(() => {
+            showSystemMessage(`Welcome ${username}! You're now connected to the real-time chat.`);
+            showSystemMessage('Type a message and press Enter to chat with others.');
+        }, 1000);
+        
+        console.log('Firebase setup complete');
+        
+    } catch (error) {
+        console.error('Firebase initialization error:', error);
+        
+        // Update UI to show error
+        connectionStatus.textContent = 'Connection Failed';
+        connectionStatus.style.color = '#ff4757';
+        
+        // Show helpful error message
+        let errorMessage = 'Chat connection failed. ';
+        
+        if (error.code === 'PERMISSION_DENIED') {
+            errorMessage += 'Firebase permissions issue. Using local mode.';
+        } else if (error.code === 'app/no-app') {
+            errorMessage += 'Firebase app not configured. Check API keys.';
+        } else if (navigator.onLine === false) {
+            errorMessage += 'No internet connection. Using local mode.';
+        } else {
+            errorMessage += 'Error: ' + error.message + '. Using local mode.';
+        }
+        
+        showSystemMessage(errorMessage);
+        
+        // Enable local fallback mode
+        enableLocalChatMode();
+    }
+}
+
+// Local fallback mode function
+function enableLocalChatMode() {
+    console.log('Enabling local chat mode');
+    isConnected = false;
+    
+    // Simple local storage for chat
+    window.localChat = {
+        messages: [],
+        
+        send: function(text) {
+            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            // Add to local array
+            this.messages.push({
+                text: text,
+                username: 'You',
+                timestamp: timestamp,
+                type: 'user'
+            });
+            
+            // Display immediately
+            displayMessage(text, 'You', timestamp, 'user');
+            
+            // Store in localStorage for persistence
+            localStorage.setItem('local_chat_last_message', JSON.stringify({
+                text: text,
+                time: timestamp
+            }));
+            
+            return true;
+        },
+        
+        loadMessages: function() {
+            const saved = localStorage.getItem('local_chat_last_message');
+            if (saved) {
+                try {
+                    const msg = JSON.parse(saved);
+                    displayMessage(msg.text, 'You', msg.time, 'user');
+                } catch (e) {
+                    console.error('Error loading saved message:', e);
+                }
             }
         }
+    };
+    
+    // Load any saved messages
+    window.localChat.loadMessages();
+}
         
         function setupFirebaseListeners() {
             // Listen for new chat messages
@@ -542,39 +731,78 @@
         
         // ======================= CHAT FUNCTIONS =======================
         function sendMessage() {
-            const messageText = chatInput.value.trim();
-            
-            if (!messageText) return;
-            
-            if (!isConnected) {
-                // Fallback to local storage if Firebase fails
-                const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                displayMessage(messageText, 'You', timestamp, 'user');
-                chatInput.value = '';
-                return;
-            }
-            
-            const message = {
-                text: messageText,
-                userId: userId,
-                username: username,
-                timestamp: firebase.database.ServerValue.TIMESTAMP
-            };
-            
-            // Push to Firebase
-            chatRef.push(message)
-                .then(() => {
-                    // Display locally immediately
-                    const displayTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    displayMessage(messageText, 'You', displayTime, 'user');
-                    chatInput.value = '';
-                    chatInput.focus();
-                })
-                .catch((error) => {
-                    console.error('Error sending message:', error);
-                    showSystemMessage('Failed to send message. Trying again...');
-                });
+    const messageText = chatInput.value.trim();
+    
+    if (!messageText) {
+        chatInput.focus();
+        return;
+    }
+    
+    // Clear input immediately for better UX
+    chatInput.value = '';
+    
+    if (!isConnected) {
+        // Use local mode
+        if (window.localChat && window.localChat.send) {
+            window.localChat.send(messageText);
+        } else {
+            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            displayMessage(messageText, 'You', timestamp, 'user');
         }
+        chatInput.focus();
+        return;
+    }
+    
+    const message = {
+        text: messageText,
+        userId: userId,
+        username: username,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        userAgent: navigator.userAgent.substring(0, 50) // For debugging
+    };
+    
+    // Show sending indicator
+    const sendingIndicator = document.createElement('div');
+    sendingIndicator.className = 'message system';
+    sendingIndicator.textContent = 'Sending...';
+    sendingIndicator.id = 'sending-indicator';
+    chatMessages.appendChild(sendingIndicator);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Push to Firebase
+    chatRef.push(message)
+        .then(() => {
+            // Remove sending indicator
+            const indicator = document.getElementById('sending-indicator');
+            if (indicator) indicator.remove();
+            
+            // Display locally immediately
+            const displayTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            displayMessage(messageText, 'You', displayTime, 'user');
+            
+            // Refocus input
+            chatInput.focus();
+            
+            console.log('Message sent successfully');
+        })
+        .catch((error) => {
+            console.error('Error sending message:', error);
+            
+            // Remove sending indicator
+            const indicator = document.getElementById('sending-indicator');
+            if (indicator) indicator.remove();
+            
+            // Show error
+            showSystemMessage('Failed to send: ' + error.message);
+            
+            // Try local fallback
+            const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            displayMessage(messageText, 'You', timestamp, 'user');
+            
+            // Refocus input
+            chatInput.focus();
+        });
+}
         
         function displayMessage(text, sender, timestamp, type = 'user') {
             const messageDiv = document.createElement('div');
@@ -779,6 +1007,39 @@
         function saveDrawing() {
             localStorage.setItem('whiteboard', canvas.toDataURL());
         }
+        // Mobile keyboard handling
+function setupMobileKeyboard() {
+    const chatInput = document.getElementById('chatInput');
+    const chatMessages = document.getElementById('chatMessages');
+    
+    chatInput.addEventListener('focus', function() {
+        // On mobile, scroll chat to bottom when input is focused
+        setTimeout(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // For mobile, add extra scroll
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                setTimeout(() => {
+                    window.scrollTo(0, document.body.scrollHeight);
+                }, 300);
+            }
+        }, 100);
+    });
+    
+    chatInput.addEventListener('blur', function() {
+        // Scroll back when keyboard closes
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+            }, 100);
+        }
+    });
+}
+
+// Call this after DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    setupMobileKeyboard();
+});
         
         // ======================= LOGIN FUNCTIONS =======================
         function checkPassword() {
