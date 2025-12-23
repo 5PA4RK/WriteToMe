@@ -181,6 +181,7 @@
             flex: 3;
             overflow: auto;
             background: #f0f0f0;
+            position: relative;
         }
         
         canvas {
@@ -215,6 +216,7 @@
             padding: 15px;
             overflow-y: auto;
             background: #fafafa;
+            min-height: 200px;
         }
         
         .message {
@@ -252,6 +254,7 @@
             border-radius: 5px;
             font-size: 14px;
             transition: border-color 0.3s;
+            min-height: 44px; /* Better for mobile touch */
         }
         
         #chatInput:focus {
@@ -267,10 +270,17 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background 0.3s;
+            min-width: 80px;
         }
         
         #sendBtn:hover {
             background: #5a67d8;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
         }
         
         .clear-btn {
@@ -280,43 +290,132 @@
             padding: 8px 16px;
             border-radius: 5px;
             cursor: pointer;
-            margin-left: auto;
+            white-space: nowrap;
         }
         
-        /* Mobile Optimizations */
+        .save-send-btn {
+            background: #2ed573;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        
+        /* Mobile Optimizations - FIXED */
         @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                align-items: flex-start;
+            }
+            
             .main-content {
                 flex-direction: column;
-                height: 800px;
+                height: auto;
+                min-height: calc(100vh - 120px);
             }
             
             .whiteboard-container {
-                height: 400px;
+                height: 50vh;
+                min-height: 400px;
+                flex: none;
+            }
+            
+            canvas {
+                width: 100% !important;
+                height: 100% !important;
             }
             
             .chat-container {
                 min-width: 100%;
-                height: 300px;
+                height: 40vh;
+                min-height: 300px;
                 border-left: none;
                 border-top: 1px solid #e0e0e0;
+                flex: none;
+            }
+            
+            .chat-input-container {
+                padding: 10px;
+            }
+            
+            .chat-input-wrapper {
+                flex-direction: column;
+            }
+            
+            #sendBtn {
+                width: 100%;
             }
             
             .tools {
                 padding: 10px;
-                gap: 5px;
+                gap: 8px;
+                flex-wrap: wrap;
             }
             
             .tool-btn {
                 padding: 6px 12px;
                 font-size: 14px;
+                flex: 1;
+                min-width: 60px;
+            }
+            
+            .color-picker {
+                order: 3;
+                width: 100%;
+                justify-content: center;
+                margin-top: 5px;
+            }
+            
+            .action-buttons {
+                order: 4;
+                width: 100%;
+                justify-content: space-between;
+                margin-top: 5px;
+            }
+            
+            .clear-btn, .save-send-btn {
+                flex: 1;
+                padding: 10px;
             }
             
             .header h2 {
                 font-size: 16px;
+                text-align: center;
+                flex: 1;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                padding: 10px;
+            }
+            
+            .status-indicator {
+                order: -1;
             }
             
             .login-screen {
                 padding: 20px;
+                margin-top: 20px;
+            }
+        }
+        
+        /* For very small screens */
+        @media (max-width: 480px) {
+            .chat-messages {
+                padding: 10px;
+                font-size: 14px;
+            }
+            
+            .message {
+                padding: 6px 10px;
+                font-size: 14px;
+            }
+            
+            .header h2 {
+                font-size: 14px;
             }
         }
     </style>
@@ -336,7 +435,7 @@
             <button id="loginBtn">Enter Whiteboard</button>
             <div class="error" id="errorMessage">Incorrect password. Try again.</div>
             <p style="margin-top: 20px; font-size: 12px; color: #999;">
-                Default password: test2
+                Default password: dory
             </p>
         </div>
         
@@ -363,7 +462,11 @@
                 </div>
                 
                 <button class="tool-btn" id="lineWidthBtn">Size: Medium</button>
-                <button class="clear-btn" id="clearBtn">Clear Board</button>
+                
+                <div class="action-buttons">
+                    <button class="save-send-btn" id="saveSendBtn">Save & Send Drawing</button>
+                    <button class="clear-btn" id="clearBtn">Clear Board</button>
+                </div>
             </div>
             
             <div class="main-content">
@@ -391,7 +494,7 @@
                             <button id="sendBtn">Send</button>
                         </div>
                         <div style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
-                            Note: Messages are shared in real-time but not saved
+                            Messages and drawings are shared in real-time
                         </div>
                     </div>
                 </div>
@@ -401,13 +504,18 @@
 
     <script>
         // Password Configuration
-        const CORRECT_PASSWORD = "dory"; // Change this to your desired password
+        const CORRECT_PASSWORD = "dory";
         
-        // Chat Configuration
+        // Storage Configuration
         const CHAT_KEY = 'whiteboard_chat_message';
         const LAST_SENDER_KEY = 'whiteboard_last_sender';
         const TIMESTAMP_KEY = 'whiteboard_message_timestamp';
-        const CHAT_EXPIRE_TIME = 30000; // 30 seconds (message disappears after 30 seconds if no one updates)
+        const DRAWING_KEY = 'whiteboard_drawing';
+        const DRAWING_SENDER_KEY = 'whiteboard_drawing_sender';
+        const DRAWING_TIMESTAMP_KEY = 'whiteboard_drawing_timestamp';
+        
+        const CHAT_EXPIRE_TIME = 30000; // 30 seconds
+        const DRAWING_EXPIRE_TIME = 60000; // 60 seconds
         
         // DOM Elements
         const loginScreen = document.getElementById('loginScreen');
@@ -420,84 +528,109 @@
         const chatInput = document.getElementById('chatInput');
         const sendBtn = document.getElementById('sendBtn');
         const chatMessages = document.getElementById('chatMessages');
+        const saveSendBtn = document.getElementById('saveSendBtn');
         
         // Whiteboard State
         let current = {
             color: '#000000',
-            size: 3,
+            size: 5,
             tool: 'pen'
         };
         let drawing = false;
         let points = [];
+        let lastSentDrawing = '';
         
-        // User ID for chat (simple random identifier)
+        // User ID for identification
         let userId = 'user_' + Math.random().toString(36).substr(2, 9);
         
         // Initialize Canvas
         function initCanvas() {
-            canvas.width = Math.max(1200, window.innerWidth - 40);
-            canvas.height = 600;
+            // Set canvas size
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
             
+            // Setup drawing context
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
             ctx.lineWidth = current.size;
             ctx.strokeStyle = current.color;
             
-            // Load saved drawing from localStorage
-            const saved = localStorage.getItem('whiteboard');
-            if (saved) {
-                const img = new Image();
-                img.onload = function() {
-                    ctx.drawImage(img, 0, 0);
-                };
-                img.src = saved;
-            }
+            // Load initial drawing from localStorage
+            loadDrawingFromStorage();
             
             // Setup event listeners
             setupCanvasEvents();
             setupToolEvents();
             setupChatEvents();
             
-            // Start checking for chat updates
-            startChatPolling();
+            // Start polling for updates
+            startPolling();
+            
+            // Handle window resize
+            window.addEventListener('resize', handleResize);
         }
         
-        // Setup Canvas Drawing Events
+        function handleResize() {
+            const container = canvas.parentElement;
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Save current drawing
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // Resize canvas
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            // Restore drawing
+            ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+        }
+        
         function setupCanvasEvents() {
+            // Mouse events
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mousemove', draw);
             canvas.addEventListener('mouseup', stopDrawing);
             canvas.addEventListener('mouseout', stopDrawing);
             
             // Touch events for mobile
-            canvas.addEventListener('touchstart', function(e) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousedown', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                canvas.dispatchEvent(mouseEvent);
-            });
-            
-            canvas.addEventListener('touchmove', function(e) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                canvas.dispatchEvent(mouseEvent);
-            });
-            
-            canvas.addEventListener('touchend', function(e) {
-                e.preventDefault();
-                const mouseEvent = new MouseEvent('mouseup', {});
-                canvas.dispatchEvent(mouseEvent);
-            });
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchmove', handleTouchMove);
+            canvas.addEventListener('touchend', handleTouchEnd);
         }
         
-        // Setup Tool Events
+        function handleTouchStart(e) {
+            e.preventDefault();
+            if (e.touches.length === 1) {
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                const offsetX = touch.clientX - rect.left;
+                const offsetY = touch.clientY - rect.top;
+                
+                startDrawing({ offsetX, offsetY });
+            }
+        }
+        
+        function handleTouchMove(e) {
+            e.preventDefault();
+            if (e.touches.length === 1) {
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                const offsetX = touch.clientX - rect.left;
+                const offsetY = touch.clientY - rect.top;
+                
+                draw({ offsetX, offsetY });
+            }
+        }
+        
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            stopDrawing();
+        }
+        
         function setupToolEvents() {
             // Tool buttons
             document.querySelectorAll('.tool-btn').forEach(btn => {
@@ -533,7 +666,8 @@
             document.getElementById('clearBtn').addEventListener('click', function() {
                 if (confirm('Are you sure you want to clear the entire board?')) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    localStorage.removeItem('whiteboard');
+                    localStorage.removeItem('whiteboard_local');
+                    lastSentDrawing = '';
                 }
             });
             
@@ -553,11 +687,13 @@
                 this.textContent = `Size: ${sizes[nextIndex].name}`;
             });
             
-            // Auto-save every 2 seconds
-            setInterval(saveDrawing, 2000);
+            // Save & Send button
+            saveSendBtn.addEventListener('click', saveAndSendDrawing);
+            
+            // Auto-save locally every 2 seconds
+            setInterval(saveLocalDrawing, 2000);
         }
         
-        // Setup Chat Events
         function setupChatEvents() {
             // Send message on button click
             sendBtn.addEventListener('click', sendMessage);
@@ -568,15 +704,6 @@
                     sendMessage();
                 }
             });
-            
-            // When user starts typing, clear any existing message
-            chatInput.addEventListener('input', function() {
-                // When someone starts typing, the old message disappears from localStorage
-                // This triggers other users to see the message was cleared
-                localStorage.removeItem(CHAT_KEY);
-                localStorage.removeItem(LAST_SENDER_KEY);
-                localStorage.removeItem(TIMESTAMP_KEY);
-            });
         }
         
         // Chat Functions
@@ -584,7 +711,7 @@
             const message = chatInput.value.trim();
             
             if (message) {
-                // Save message to localStorage with timestamp
+                // Save message to localStorage
                 localStorage.setItem(CHAT_KEY, message);
                 localStorage.setItem(LAST_SENDER_KEY, userId);
                 localStorage.setItem(TIMESTAMP_KEY, Date.now().toString());
@@ -598,9 +725,6 @@
         }
         
         function displayMessage(message, sender) {
-            // Clear chat messages (since we only show one message at a time)
-            chatMessages.innerHTML = '';
-            
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message';
             messageDiv.textContent = `${sender}: ${message}`;
@@ -611,49 +735,12 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
-        function checkForNewMessages() {
-            const message = localStorage.getItem(CHAT_KEY);
-            const lastSender = localStorage.getItem(LAST_SENDER_KEY);
-            const timestamp = localStorage.getItem(TIMESTAMP_KEY);
-            
-            if (message && lastSender && timestamp) {
-                const messageTime = parseInt(timestamp);
-                const currentTime = Date.now();
-                
-                // Check if message is expired (30 seconds old)
-                if (currentTime - messageTime > CHAT_EXPIRE_TIME) {
-                    // Clear expired message
-                    localStorage.removeItem(CHAT_KEY);
-                    localStorage.removeItem(LAST_SENDER_KEY);
-                    localStorage.removeItem(TIMESTAMP_KEY);
-                    
-                    // Clear display
-                    chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
-                } 
-                // Only display if message is from another user
-                else if (lastSender !== userId) {
-                    displayMessage(message, 'Other User');
-                }
-            } else {
-                // No active message
-                chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
-            }
-        }
-        
-        function startChatPolling() {
-            // Check for new messages every 500ms
-            setInterval(checkForNewMessages, 500);
-            
-            // Initial check
-            checkForNewMessages();
-        }
-        
         // Drawing Functions
         function startDrawing(e) {
             drawing = true;
             points = [{
-                x: e.offsetX || e.layerX,
-                y: e.offsetY || e.layerY
+                x: e.offsetX,
+                y: e.offsetY
             }];
         }
         
@@ -661,8 +748,8 @@
             if (!drawing) return;
             
             const point = {
-                x: e.offsetX || e.layerX,
-                y: e.offsetY || e.layerY
+                x: e.offsetX,
+                y: e.offsetY
             };
             
             points.push(point);
@@ -682,10 +769,117 @@
         function stopDrawing() {
             drawing = false;
             points = [];
+            saveLocalDrawing();
         }
         
-        function saveDrawing() {
-            localStorage.setItem('whiteboard', canvas.toDataURL());
+        function saveLocalDrawing() {
+            localStorage.setItem('whiteboard_local', canvas.toDataURL());
+        }
+        
+        function saveAndSendDrawing() {
+            const drawingData = canvas.toDataURL();
+            lastSentDrawing = drawingData;
+            
+            // Save to shared storage
+            localStorage.setItem(DRAWING_KEY, drawingData);
+            localStorage.setItem(DRAWING_SENDER_KEY, userId);
+            localStorage.setItem(DRAWING_TIMESTAMP_KEY, Date.now().toString());
+            
+            // Show confirmation
+            alert('Drawing saved and sent to other users!');
+        }
+        
+        function loadDrawingFromStorage() {
+            // First try to load shared drawing
+            const sharedDrawing = localStorage.getItem(DRAWING_KEY);
+            const drawingSender = localStorage.getItem(DRAWING_SENDER_KEY);
+            const drawingTimestamp = localStorage.getItem(DRAWING_TIMESTAMP_KEY);
+            
+            if (sharedDrawing && drawingTimestamp) {
+                const drawingTime = parseInt(drawingTimestamp);
+                const currentTime = Date.now();
+                
+                if (currentTime - drawingTime <= DRAWING_EXPIRE_TIME) {
+                    // Only load if it's from another user
+                    if (drawingSender !== userId) {
+                        const img = new Image();
+                        img.onload = function() {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        };
+                        img.src = sharedDrawing;
+                        return;
+                    }
+                }
+            }
+            
+            // Fallback to local drawing
+            const localDrawing = localStorage.getItem('whiteboard_local');
+            if (localDrawing) {
+                const img = new Image();
+                img.onload = function() {
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = localDrawing;
+            }
+        }
+        
+        function checkForUpdates() {
+            // Check for new messages
+            const message = localStorage.getItem(CHAT_KEY);
+            const lastSender = localStorage.getItem(LAST_SENDER_KEY);
+            const timestamp = localStorage.getItem(TIMESTAMP_KEY);
+            
+            if (message && lastSender && timestamp) {
+                const messageTime = parseInt(timestamp);
+                const currentTime = Date.now();
+                
+                // Check if message is expired
+                if (currentTime - messageTime > CHAT_EXPIRE_TIME) {
+                    localStorage.removeItem(CHAT_KEY);
+                    localStorage.removeItem(LAST_SENDER_KEY);
+                    localStorage.removeItem(TIMESTAMP_KEY);
+                } 
+                // Display if message is from another user
+                else if (lastSender !== userId) {
+                    // Clear chat and show new message
+                    chatMessages.innerHTML = '';
+                    displayMessage(message, 'Other User');
+                }
+            }
+            
+            // Check for new drawings
+            const sharedDrawing = localStorage.getItem(DRAWING_KEY);
+            const drawingSender = localStorage.getItem(DRAWING_SENDER_KEY);
+            const drawingTimestamp = localStorage.getItem(DRAWING_TIMESTAMP_KEY);
+            
+            if (sharedDrawing && drawingSender && drawingTimestamp) {
+                const drawingTime = parseInt(drawingTimestamp);
+                const currentTime = Date.now();
+                
+                if (currentTime - drawingTime <= DRAWING_EXPIRE_TIME) {
+                    // Only load if it's from another user and different from last one
+                    if (drawingSender !== userId && sharedDrawing !== lastSentDrawing) {
+                        const img = new Image();
+                        img.onload = function() {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            lastSentDrawing = sharedDrawing;
+                        };
+                        img.src = sharedDrawing;
+                    }
+                } else {
+                    // Clear expired drawing
+                    localStorage.removeItem(DRAWING_KEY);
+                    localStorage.removeItem(DRAWING_SENDER_KEY);
+                    localStorage.removeItem(DRAWING_TIMESTAMP_KEY);
+                }
+            }
+        }
+        
+        function startPolling() {
+            // Check for updates every 500ms
+            setInterval(checkForUpdates, 500);
         }
         
         // Password Login
@@ -705,7 +899,7 @@
                 
                 // Show welcome message
                 setTimeout(() => {
-                    alert('Welcome to the collaborative whiteboard with chat!\n\nFeatures:\n1. Draw with different colors\n2. Use eraser to remove\n3. Chat with others in real-time\n4. Messages disappear when someone starts typing new one\n\nChanges are automatically saved!');
+                    alert('Welcome to the collaborative whiteboard with chat!\n\nFeatures:\n1. Draw with different colors\n2. Use eraser to remove\n3. Chat with others in real-time\n4. Click "Save & Send Drawing" to share your drawing\n5. Changes auto-save locally\n\nNote: Chat messages disappear after 30 seconds of inactivity.');
                 }, 500);
             } else {
                 errorMessage.style.display = 'block';
@@ -730,6 +924,7 @@
         
         // Check if already authenticated
         window.addEventListener('load', function() {
+            // Add shake animation
             const style = document.createElement('style');
             style.textContent = `
                 @keyframes shake {
