@@ -233,6 +233,7 @@
             word-wrap: break-word;
             max-width: 85%;
             border: 1px solid #e0e0e0;
+            animation: fadeIn 0.3s ease-out;
         }
         
         .message.you {
@@ -255,6 +256,11 @@
             color: #666;
             text-align: center;
             max-width: 100%;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .chat-input-container {
@@ -334,14 +340,13 @@
             
             .main-content {
                 flex-direction: column-reverse; /* Chat first on mobile */
-                height: auto;
-                min-height: calc(100vh - 120px);
+                height: calc(100vh - 140px);
             }
             
             .chat-container {
                 min-width: 100%;
-                height: 45vh; /* Larger chat area on mobile */
-                min-height: 300px;
+                height: 40%; /* Chat takes 40% of screen */
+                min-height: 250px;
                 border-left: none;
                 border-bottom: 1px solid #e0e0e0;
                 flex: none;
@@ -351,12 +356,13 @@
             
             .chat-messages {
                 flex: 1;
-                min-height: 200px;
+                min-height: 150px;
+                font-size: 14px;
             }
             
             .whiteboard-container {
-                height: 50vh;
-                min-height: 400px;
+                height: 60%; /* Whiteboard takes 60% */
+                min-height: 300px;
                 flex: none;
             }
             
@@ -372,11 +378,12 @@
             
             .chat-input-wrapper {
                 flex-direction: row;
+                align-items: center;
             }
             
             #sendBtn {
-                width: auto;
-                padding: 10px 15px;
+                height: 44px;
+                padding: 0 15px;
             }
             
             .tools {
@@ -389,7 +396,7 @@
                 padding: 8px 12px;
                 font-size: 14px;
                 flex: 1;
-                min-width: 70px;
+                min-width: 60px;
             }
             
             .color-picker {
@@ -445,49 +452,11 @@
                 font-size: 18px;
                 font-weight: bold;
             }
-        }
-        
-        /* For very small screens */
-        @media (max-width: 480px) {
-            .chat-container {
-                height: 50vh;
-            }
-            
-            .whiteboard-container {
-                height: 45vh;
-            }
-            
-            .chat-messages {
-                padding: 10px;
-                font-size: 14px;
-            }
             
             .message {
                 padding: 8px 12px;
-                font-size: 14px;
+                font-size: 13px;
             }
-            
-            .header h2 {
-                font-size: 14px;
-            }
-            
-            .chat-input-wrapper {
-                flex-direction: column;
-            }
-            
-            #sendBtn {
-                width: 100%;
-            }
-        }
-        
-        /* Animation for new messages */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .new-message {
-            animation: fadeIn 0.3s ease-out;
         }
         
         /* Toast notification */
@@ -497,17 +466,31 @@
             right: 20px;
             background: #2ed573;
             color: white;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border-radius: 5px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             z-index: 1000;
             display: none;
             animation: slideIn 0.3s ease-out;
+            font-weight: bold;
         }
         
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
+        }
+        
+        /* User indicator */
+        .user-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 100;
         }
     </style>
 </head>
@@ -566,7 +549,7 @@
                     <div class="chat-header">
                         <h3>Live Chat 💬</h3>
                         <div style="font-size: 12px; color: rgba(255,255,255,0.9);">
-                            Messages sync instantly
+                            Real-time messaging
                         </div>
                     </div>
                     
@@ -585,7 +568,7 @@
                             <button id="sendBtn">Send</button>
                         </div>
                         <div style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
-                            Messages sync in real-time between all users
+                            Messages sync instantly between all users
                         </div>
                     </div>
                 </div>
@@ -599,18 +582,22 @@
     </div>
     
     <!-- Toast Notification -->
-    <div class="toast" id="toast">New message received!</div>
+    <div class="toast" id="toast"></div>
+    
+    <!-- User Indicator -->
+    <div class="user-indicator" id="userIndicator"></div>
 
     <script>
         // Password Configuration
         const CORRECT_PASSWORD = "123";
         
-        // Storage Keys - Use a unique prefix for this session
-        const STORAGE_PREFIX = 'collab_whiteboard_';
+        // Storage Keys - Using a specific namespace to avoid conflicts
+        const STORAGE_PREFIX = 'collab_whiteboard_v2_';
         const CHAT_HISTORY_KEY = STORAGE_PREFIX + 'chat_history';
         const DRAWING_DATA_KEY = STORAGE_PREFIX + 'drawing_data';
         const USER_ID_KEY = STORAGE_PREFIX + 'user_id';
-        const LAST_UPDATE_KEY = STORAGE_PREFIX + 'last_update';
+        const LAST_DRAWING_TIMESTAMP_KEY = STORAGE_PREFIX + 'last_drawing_ts';
+        const LAST_MESSAGE_TIMESTAMP_KEY = STORAGE_PREFIX + 'last_message_ts';
         
         // DOM Elements
         const loginScreen = document.getElementById('loginScreen');
@@ -625,6 +612,7 @@
         const chatMessages = document.getElementById('chatMessages');
         const saveSendBtn = document.getElementById('saveSendBtn');
         const toast = document.getElementById('toast');
+        const userIndicator = document.getElementById('userIndicator');
         
         // Application State
         let current = {
@@ -635,33 +623,45 @@
         let drawing = false;
         let points = [];
         let userId = '';
-        let lastChatUpdate = 0;
-        let lastDrawingUpdate = 0;
+        let lastKnownDrawing = '';
+        let lastKnownDrawingTimestamp = 0;
+        let lastKnownChatTimestamp = 0;
+        let isFirstLoad = true;
+        
+        // Generate unique user ID
+        function generateUserId() {
+            return 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        }
         
         // Initialize the application
         function initApp() {
-            // Generate or retrieve user ID
+            // Get or create user ID
             userId = localStorage.getItem(USER_ID_KEY);
             if (!userId) {
-                userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                userId = generateUserId();
                 localStorage.setItem(USER_ID_KEY, userId);
             }
+            
+            // Show user indicator
+            userIndicator.textContent = `You: ${userId.substring(0, 12)}...`;
             
             // Initialize canvas
             initCanvas();
             
-            // Load existing data
+            // Load initial data
             loadChatHistory();
             loadDrawing();
-            
-            // Start polling for updates
-            startPolling();
             
             // Setup event listeners
             setupEventListeners();
             
-            // Show user indicator
-            showSystemMessage(`You joined as: ${userId.substring(0, 8)}...`);
+            // Start aggressive polling for updates
+            startPolling();
+            
+            // Show welcome message
+            setTimeout(() => {
+                addSystemMessage(`User ${userId.substring(0, 8)}... joined the session`);
+            }, 500);
         }
         
         function initCanvas() {
@@ -673,27 +673,6 @@
             ctx.lineCap = 'round';
             ctx.lineWidth = current.size;
             ctx.strokeStyle = current.color;
-            
-            // Handle window resize
-            window.addEventListener('resize', handleResize);
-        }
-        
-        function handleResize() {
-            const container = canvas.parentElement;
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // Save current drawing
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            tempCtx.drawImage(canvas, 0, 0);
-            
-            // Resize canvas
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-            
-            // Restore drawing
-            ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
         }
         
         function setupEventListeners() {
@@ -743,7 +722,7 @@
                 if (confirm('Are you sure you want to clear the entire board?')) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     // Clear shared drawing
-                    saveDrawingToStorage(true); // Clear flag
+                    saveDrawingToStorage(true);
                 }
             });
             
@@ -777,32 +756,50 @@
                 }
             });
             
-            // Auto-save drawing every 3 seconds
+            // Auto-save drawing while drawing
             setInterval(() => {
                 if (drawing) {
                     saveDrawingToStorage();
                 }
-            }, 3000);
+            }, 1000);
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                // Save current drawing
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                tempCtx.drawImage(canvas, 0, 0);
+                
+                // Resize canvas
+                const container = canvas.parentElement;
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                
+                // Restore drawing
+                ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+            });
         }
         
         // Drawing Functions
         function startDrawing(e) {
             drawing = true;
-            points = [{
-                x: e.offsetX || (e.touches ? e.touches[0].clientX - canvas.getBoundingClientRect().left : 0),
-                y: e.offsetY || (e.touches ? e.touches[0].clientY - canvas.getBoundingClientRect().top : 0)
-            }];
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX ? e.clientX - rect.left : e.touches[0].clientX - rect.left;
+            const y = e.clientY ? e.clientY - rect.top : e.touches[0].clientY - rect.top;
+            
+            points = [{ x, y }];
         }
         
         function draw(e) {
             if (!drawing) return;
             
             const rect = canvas.getBoundingClientRect();
-            const point = {
-                x: e.offsetX || (e.touches ? e.touches[0].clientX - rect.left : 0),
-                y: e.offsetY || (e.touches ? e.touches[0].clientY - rect.top : 0)
-            };
+            const x = e.clientX ? e.clientX - rect.left : e.touches[0].clientX - rect.left;
+            const y = e.clientY ? e.clientY - rect.top : e.touches[0].clientY - rect.top;
             
+            const point = { x, y };
             points.push(point);
             
             if (points.length > 3) {
@@ -818,6 +815,8 @@
         }
         
         function stopDrawing() {
+            if (!drawing) return;
+            
             drawing = false;
             points = [];
             saveDrawingToStorage();
@@ -832,7 +831,7 @@
         
         function handleTouchMove(e) {
             e.preventDefault();
-            if (e.touches.length === 1) {
+            if (e.touches.length === 1 && drawing) {
                 draw(e);
             }
         }
@@ -842,18 +841,22 @@
             stopDrawing();
         }
         
-        // Drawing Storage Functions
+        // Drawing Storage and Sync
         function saveDrawingToStorage(clear = false) {
-            const drawingData = clear ? null : canvas.toDataURL();
+            const drawingData = clear ? '' : canvas.toDataURL();
+            const timestamp = Date.now();
             
             const drawingInfo = {
                 data: drawingData,
                 userId: userId,
-                timestamp: Date.now()
+                timestamp: timestamp
             };
             
             localStorage.setItem(DRAWING_DATA_KEY, JSON.stringify(drawingInfo));
-            lastDrawingUpdate = drawingInfo.timestamp;
+            localStorage.setItem(LAST_DRAWING_TIMESTAMP_KEY, timestamp.toString());
+            
+            lastKnownDrawing = drawingData;
+            lastKnownDrawingTimestamp = timestamp;
         }
         
         function loadDrawing() {
@@ -862,20 +865,35 @@
                 if (drawingInfoStr) {
                     const drawingInfo = JSON.parse(drawingInfoStr);
                     
-                    // Only load if it's not our own drawing
-                    if (drawingInfo.userId !== userId && drawingInfo.data) {
-                        const img = new Image();
-                        img.onload = function() {
+                    // Only load if it's different from what we already have
+                    if (drawingInfo.timestamp > lastKnownDrawingTimestamp && 
+                        drawingInfo.data !== lastKnownDrawing &&
+                        drawingInfo.userId !== userId) {
+                        
+                        if (drawingInfo.data) {
+                            const img = new Image();
+                            img.onload = function() {
+                                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            };
+                            img.src = drawingInfo.data;
+                        } else {
+                            // Clear canvas if data is empty
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        };
-                        img.src = drawingInfo.data;
-                        lastDrawingUpdate = drawingInfo.timestamp;
+                        }
+                        
+                        lastKnownDrawing = drawingInfo.data;
+                        lastKnownDrawingTimestamp = drawingInfo.timestamp;
+                        
+                        if (!isFirstLoad) {
+                            showToast('New drawing received!');
+                        }
                     }
                 }
             } catch (e) {
                 console.error('Error loading drawing:', e);
             }
+            isFirstLoad = false;
         }
         
         // Chat Functions
@@ -883,18 +901,19 @@
             const message = chatInput.value.trim();
             
             if (message) {
-                // Add message to chat history
-                const chatHistory = getChatHistory();
+                const timestamp = Date.now();
                 const newMessage = {
-                    id: Date.now(),
+                    id: timestamp,
                     text: message,
                     userId: userId,
-                    timestamp: Date.now()
+                    timestamp: timestamp
                 };
                 
+                // Add to chat history
+                const chatHistory = getChatHistory();
                 chatHistory.push(newMessage);
                 localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
-                lastChatUpdate = newMessage.timestamp;
+                localStorage.setItem(LAST_MESSAGE_TIMESTAMP_KEY, timestamp.toString());
                 
                 // Display message locally
                 displayMessage(newMessage, true);
@@ -902,6 +921,8 @@
                 // Clear input
                 chatInput.value = '';
                 chatInput.focus();
+                
+                lastKnownChatTimestamp = timestamp;
             }
         }
         
@@ -919,7 +940,7 @@
             chatMessages.innerHTML = '';
             
             if (chatHistory.length === 0) {
-                showSystemMessage('Chat started. Type your message below!');
+                addSystemMessage('Chat started. Type your message below!');
                 return;
             }
             
@@ -930,18 +951,24 @@
             // Scroll to bottom
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
-            // Set last update time
+            // Set last timestamp
             if (chatHistory.length > 0) {
-                lastChatUpdate = chatHistory[chatHistory.length - 1].timestamp;
+                lastKnownChatTimestamp = chatHistory[chatHistory.length - 1].timestamp;
             }
         }
         
         function displayMessage(message, isOwn = false) {
             const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isOwn ? 'you' : 'other'} new-message`;
+            messageDiv.className = `message ${isOwn ? 'you' : 'other'}`;
             
-            const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const userDisplay = isOwn ? 'You' : `User ${message.userId.substring(0, 8)}...`;
+            const time = new Date(message.timestamp).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            const shortUserId = message.userId.substring(0, 8) + '...';
+            const userDisplay = isOwn ? 'You' : shortUserId;
             
             messageDiv.textContent = `${userDisplay} (${time}): ${message.text}`;
             
@@ -949,7 +976,7 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
-        function showSystemMessage(text) {
+        function addSystemMessage(text) {
             const systemDiv = document.createElement('div');
             systemDiv.className = 'message system';
             systemDiv.textContent = text;
@@ -962,30 +989,60 @@
             toast.style.display = 'block';
             setTimeout(() => {
                 toast.style.display = 'none';
-            }, 3000);
+            }, 2000);
         }
         
-        // Polling for Updates
+        // Polling for Updates - Very aggressive to ensure real-time sync
         function startPolling() {
-            // Check for chat updates every 500ms
-            setInterval(checkForChatUpdates, 500);
+            // Check for drawing updates very frequently
+            setInterval(checkForDrawingUpdates, 300);
             
-            // Check for drawing updates every 1 second
-            setInterval(checkForDrawingUpdates, 1000);
+            // Check for chat updates very frequently
+            setInterval(checkForChatUpdates, 300);
+            
+            // Force initial sync
+            setTimeout(() => {
+                checkForDrawingUpdates();
+                checkForChatUpdates();
+            }, 100);
+        }
+        
+        function checkForDrawingUpdates() {
+            try {
+                const drawingInfoStr = localStorage.getItem(DRAWING_DATA_KEY);
+                if (!drawingInfoStr) return;
+                
+                const drawingInfo = JSON.parse(drawingInfoStr);
+                const lastDrawingTimestamp = parseInt(localStorage.getItem(LAST_DRAWING_TIMESTAMP_KEY) || '0');
+                
+                // Check if there's a newer drawing from another user
+                if (drawingInfo.timestamp > lastKnownDrawingTimestamp && 
+                    drawingInfo.userId !== userId &&
+                    lastDrawingTimestamp > lastKnownDrawingTimestamp) {
+                    
+                    loadDrawing();
+                }
+            } catch (e) {
+                console.error('Error checking drawing updates:', e);
+            }
         }
         
         function checkForChatUpdates() {
             try {
                 const chatHistory = getChatHistory();
+                const lastMessageTimestamp = parseInt(localStorage.getItem(LAST_MESSAGE_TIMESTAMP_KEY) || '0');
                 
                 if (chatHistory.length > 0) {
                     const lastMessage = chatHistory[chatHistory.length - 1];
                     
-                    // Check if there's a new message from another user
-                    if (lastMessage.timestamp > lastChatUpdate && lastMessage.userId !== userId) {
-                        // Reload entire chat history to show all messages
+                    // Check if there's a newer message
+                    if (lastMessage.timestamp > lastKnownChatTimestamp && 
+                        lastMessage.userId !== userId &&
+                        lastMessageTimestamp > lastKnownChatTimestamp) {
+                        
+                        // Reload entire chat history
                         loadChatHistory();
-                        lastChatUpdate = lastMessage.timestamp;
+                        lastKnownChatTimestamp = lastMessage.timestamp;
                         
                         // Show notification for new message
                         if (!document.hidden) {
@@ -995,28 +1052,6 @@
                 }
             } catch (e) {
                 console.error('Error checking chat updates:', e);
-            }
-        }
-        
-        function checkForDrawingUpdates() {
-            try {
-                const drawingInfoStr = localStorage.getItem(DRAWING_DATA_KEY);
-                if (drawingInfoStr) {
-                    const drawingInfo = JSON.parse(drawingInfoStr);
-                    
-                    // Check if there's a new drawing from another user
-                    if (drawingInfo.timestamp > lastDrawingUpdate && drawingInfo.userId !== userId) {
-                        loadDrawing();
-                        lastDrawingUpdate = drawingInfo.timestamp;
-                        
-                        // Show notification
-                        if (!document.hidden && drawingInfo.data) {
-                            showToast('Drawing updated!');
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('Error checking drawing updates:', e);
             }
         }
         
@@ -1031,7 +1066,7 @@
                 initApp();
                 
                 setTimeout(() => {
-                    alert('Welcome to the collaborative whiteboard!\n\n• Chat messages sync instantly\n• Drawings update in real-time\n• Mobile: Chat appears first\n• All changes are saved automatically');
+                    alert('Welcome to the collaborative whiteboard!\n\nFeatures:\n• Real-time chat (updates every 0.3 seconds)\n• Real-time drawing sync\n• Mobile: Chat appears first\n• All changes sync instantly\n\nTest with multiple browser tabs!');
                 }, 500);
             } else {
                 errorMessage.style.display = 'block';
@@ -1046,19 +1081,8 @@
             }
         }
         
-        // Initialize
+        // Initialize on load
         window.addEventListener('load', function() {
-            // Add shake animation
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes shake {
-                    0%, 100% {transform: translateX(0);}
-                    10%, 30%, 50%, 70%, 90% {transform: translateX(-5px);}
-                    20%, 40%, 60%, 80% {transform: translateX(5px);}
-                }
-            `;
-            document.head.appendChild(style);
-            
             // Check if already authenticated
             if (sessionStorage.getItem('whiteboard_authenticated') === 'true') {
                 loginScreen.style.display = 'none';
