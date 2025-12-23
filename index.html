@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Whiteboard with Chat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1400px;
+        }
+        
+        /* Login Screen */
+        .login-screen {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        .login-screen h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .login-screen p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        #passwordInput {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+        
+        #passwordInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        #loginBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.3s;
+            width: 100%;
+        }
+        
+        #loginBtn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .error {
+            color: #ff4757;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        /* Whiteboard Screen */
+        .whiteboard-screen {
+            display: none;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #667eea;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h2 {
+            font-size: 18px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #4cd137;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .tools {
+            background: #f8f9fa;
+            padding: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .tool-btn {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .tool-btn:hover {
+            border-color: #667eea;
+        }
+        
+        .tool-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .color-picker {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .color-option.active {
+            border-color: #333;
+        }
+        
+        .main-content {
+            display: flex;
+            height: 600px;
+        }
+        
+        .whiteboard-container {
+            flex: 3;
+            overflow: auto;
+            background: #f0f0f0;
+        }
+        
+        canvas {
+            display: block;
+            background: white;
+            cursor: crosshair;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .chat-container {
+            flex: 1;
+            min-width: 300px;
+            background: #fff;
+            border-left: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-header {
+            background: #f8f9fa;
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .chat-header h3 {
+            color: #333;
+            font-size: 16px;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #fafafa;
+        }
+        
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            word-wrap: break-word;
+        }
+        
+        .message.system {
+            background: #e3f2fd;
+            font-style: italic;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        
+        .chat-input-container {
+            padding: 15px;
+            border-top: 1px solid #e0e0e0;
+            background: #f8f9fa;
+        }
+        
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #chatInput {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        #chatInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        #sendBtn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        #sendBtn:hover {
+            background: #5a67d8;
+        }
+        
+        .clear-btn {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: auto;
+        }
+        
+        /* Mobile Optimizations */
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+                height: 800px;
+            }
+            
+            .whiteboard-container {
+                height: 400px;
+            }
+            
+            .chat-container {
+                min-width: 100%;
+                height: 300px;
+                border-left: none;
+                border-top: 1px solid #e0e0e0;
+            }
+            
+            .tools {
+                padding: 10px;
+                gap: 5px;
+            }
+            
+            .tool-btn {
+                padding: 6px 12px;
+                font-size: 14px;
+            }
+            
+            .header h2 {
+                font-size: 16px;
+            }
+            
+            .login-screen {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Screen -->
+        <div class="login-screen" id="loginScreen">
+            <h1>Collaborative Whiteboard with Chat</h1>
+            <p>Enter the password to access the shared whiteboard</p>
+            <input 
+                type="password" 
+                id="passwordInput" 
+                placeholder="Enter password"
+                autocomplete="current-password"
+            >
+            <button id="loginBtn">Enter Whiteboard</button>
+            <div class="error" id="errorMessage">Incorrect password. Try again.</div>
+            <p style="margin-top: 20px; font-size: 12px; color: #999;">
+                Default password: Star
+            </p>
+        </div>
+        
+        <!-- Whiteboard Screen -->
+        <div class="whiteboard-screen" id="whiteboardScreen">
+            <div class="header">
+                <h2>Shared Whiteboard - Draw & Chat Together!</h2>
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>Connected</span>
+                </div>
+            </div>
+            
+            <div class="tools">
+                <button class="tool-btn active" data-tool="pen">Pen</button>
+                <button class="tool-btn" data-tool="eraser">Eraser</button>
+                
+                <div class="color-picker">
+                    <div class="color-option active" style="background: #000000;" data-color="#000000"></div>
+                    <div class="color-option" style="background: #ff4757;" data-color="#ff4757"></div>
+                    <div class="color-option" style="background: #2ed573;" data-color="#2ed573"></div>
+                    <div class="color-option" style="background: #1e90ff;" data-color="#1e90ff"></div>
+                    <div class="color-option" style="background: #ffa502;" data-color="#ffa502"></div>
+                </div>
+                
+                <button class="tool-btn" id="lineWidthBtn">Size: Medium</button>
+                <button class="clear-btn" id="clearBtn">Clear Board</button>
+            </div>
+            
+            <div class="main-content">
+                <div class="whiteboard-container">
+                    <canvas id="whiteboard"></canvas>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <h3>Live Chat</h3>
+                    </div>
+                    
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message system">Chat started. Type your message below!</div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <input 
+                                type="text" 
+                                id="chatInput" 
+                                placeholder="Type your message here..."
+                                maxlength="500"
+                            >
+                            <button id="sendBtn">Send</button>
+                        </div>
+                        <div style="margin-top: 5px; font-size: 12px; color: #666; text-align: center;">
+                            Note: Messages are shared in real-time but not saved
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Password Configuration
+        const CORRECT_PASSWORD = "whiteboard123"; // Change this to your desired password
+        
+        // Chat Configuration
+        const CHAT_KEY = 'whiteboard_chat_message';
+        const LAST_SENDER_KEY = 'whiteboard_last_sender';
+        const TIMESTAMP_KEY = 'whiteboard_message_timestamp';
+        const CHAT_EXPIRE_TIME = 30000; // 30 seconds (message disappears after 30 seconds if no one updates)
+        
+        // DOM Elements
+        const loginScreen = document.getElementById('loginScreen');
+        const whiteboardScreen = document.getElementById('whiteboardScreen');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const chatMessages = document.getElementById('chatMessages');
+        
+        // Whiteboard State
+        let current = {
+            color: '#000000',
+            size: 3,
+            tool: 'pen'
+        };
+        let drawing = false;
+        let points = [];
+        
+        // User ID for chat (simple random identifier)
+        let userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        
+        // Initialize Canvas
+        function initCanvas() {
+            canvas.width = Math.max(1200, window.innerWidth - 40);
+            canvas.height = 600;
+            
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.lineWidth = current.size;
+            ctx.strokeStyle = current.color;
+            
+            // Load saved drawing from localStorage
+            const saved = localStorage.getItem('whiteboard');
+            if (saved) {
+                const img = new Image();
+                img.onload = function() {
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = saved;
+            }
+            
+            // Setup event listeners
+            setupCanvasEvents();
+            setupToolEvents();
+            setupChatEvents();
+            
+            // Start checking for chat updates
+            startChatPolling();
+        }
+        
+        // Setup Canvas Drawing Events
+        function setupCanvasEvents() {
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            
+            // Touch events for mobile
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const mouseEvent = new MouseEvent('mousedown', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                });
+                canvas.dispatchEvent(mouseEvent);
+            });
+            
+            canvas.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const mouseEvent = new MouseEvent('mousemove', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                });
+                canvas.dispatchEvent(mouseEvent);
+            });
+            
+            canvas.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                const mouseEvent = new MouseEvent('mouseup', {});
+                canvas.dispatchEvent(mouseEvent);
+            });
+        }
+        
+        // Setup Tool Events
+        function setupToolEvents() {
+            // Tool buttons
+            document.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    current.tool = this.dataset.tool;
+                    
+                    if (current.tool === 'eraser') {
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 20;
+                    } else {
+                        ctx.strokeStyle = current.color;
+                        ctx.lineWidth = current.size;
+                    }
+                });
+            });
+            
+            // Color picker
+            document.querySelectorAll('.color-option').forEach(colorBtn => {
+                colorBtn.addEventListener('click', function() {
+                    if (current.tool === 'eraser') return;
+                    
+                    document.querySelectorAll('.color-option').forEach(c => c.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    current.color = this.dataset.color;
+                    ctx.strokeStyle = current.color;
+                });
+            });
+            
+            // Clear button
+            document.getElementById('clearBtn').addEventListener('click', function() {
+                if (confirm('Are you sure you want to clear the entire board?')) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    localStorage.removeItem('whiteboard');
+                }
+            });
+            
+            // Line width button
+            document.getElementById('lineWidthBtn').addEventListener('click', function() {
+                const sizes = [
+                    {name: 'Small', size: 2},
+                    {name: 'Medium', size: 5},
+                    {name: 'Large', size: 10},
+                    {name: 'Extra Large', size: 20}
+                ];
+                
+                const currentIndex = sizes.findIndex(s => s.size === current.size);
+                const nextIndex = (currentIndex + 1) % sizes.length;
+                current.size = sizes[nextIndex].size;
+                ctx.lineWidth = current.size;
+                this.textContent = `Size: ${sizes[nextIndex].name}`;
+            });
+            
+            // Auto-save every 2 seconds
+            setInterval(saveDrawing, 2000);
+        }
+        
+        // Setup Chat Events
+        function setupChatEvents() {
+            // Send message on button click
+            sendBtn.addEventListener('click', sendMessage);
+            
+            // Send message on Enter key
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // When user starts typing, clear any existing message
+            chatInput.addEventListener('input', function() {
+                // When someone starts typing, the old message disappears from localStorage
+                // This triggers other users to see the message was cleared
+                localStorage.removeItem(CHAT_KEY);
+                localStorage.removeItem(LAST_SENDER_KEY);
+                localStorage.removeItem(TIMESTAMP_KEY);
+            });
+        }
+        
+        // Chat Functions
+        function sendMessage() {
+            const message = chatInput.value.trim();
+            
+            if (message) {
+                // Save message to localStorage with timestamp
+                localStorage.setItem(CHAT_KEY, message);
+                localStorage.setItem(LAST_SENDER_KEY, userId);
+                localStorage.setItem(TIMESTAMP_KEY, Date.now().toString());
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Display message locally
+                displayMessage(message, 'You');
+            }
+        }
+        
+        function displayMessage(message, sender) {
+            // Clear chat messages (since we only show one message at a time)
+            chatMessages.innerHTML = '';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.textContent = `${sender}: ${message}`;
+            
+            chatMessages.appendChild(messageDiv);
+            
+            // Auto scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function checkForNewMessages() {
+            const message = localStorage.getItem(CHAT_KEY);
+            const lastSender = localStorage.getItem(LAST_SENDER_KEY);
+            const timestamp = localStorage.getItem(TIMESTAMP_KEY);
+            
+            if (message && lastSender && timestamp) {
+                const messageTime = parseInt(timestamp);
+                const currentTime = Date.now();
+                
+                // Check if message is expired (30 seconds old)
+                if (currentTime - messageTime > CHAT_EXPIRE_TIME) {
+                    // Clear expired message
+                    localStorage.removeItem(CHAT_KEY);
+                    localStorage.removeItem(LAST_SENDER_KEY);
+                    localStorage.removeItem(TIMESTAMP_KEY);
+                    
+                    // Clear display
+                    chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
+                } 
+                // Only display if message is from another user
+                else if (lastSender !== userId) {
+                    displayMessage(message, 'Other User');
+                }
+            } else {
+                // No active message
+                chatMessages.innerHTML = '<div class="message system">No active messages. Start typing!</div>';
+            }
+        }
+        
+        function startChatPolling() {
+            // Check for new messages every 500ms
+            setInterval(checkForNewMessages, 500);
+            
+            // Initial check
+            checkForNewMessages();
+        }
+        
+        // Drawing Functions
+        function startDrawing(e) {
+            drawing = true;
+            points = [{
+                x: e.offsetX || e.layerX,
+                y: e.offsetY || e.layerY
+            }];
+        }
+        
+        function draw(e) {
+            if (!drawing) return;
+            
+            const point = {
+                x: e.offsetX || e.layerX,
+                y: e.offsetY || e.layerY
+            };
+            
+            points.push(point);
+            
+            if (points.length > 3) {
+                const lastTwoPoints = points.slice(-2);
+                const controlPoint = lastTwoPoints[0];
+                const currentPoint = lastTwoPoints[1];
+                
+                ctx.beginPath();
+                ctx.moveTo(controlPoint.x, controlPoint.y);
+                ctx.lineTo(currentPoint.x, currentPoint.y);
+                ctx.stroke();
+            }
+        }
+        
+        function stopDrawing() {
+            drawing = false;
+            points = [];
+        }
+        
+        function saveDrawing() {
+            localStorage.setItem('whiteboard', canvas.toDataURL());
+        }
+        
+        // Password Login
+        function checkPassword() {
+            const enteredPassword = passwordInput.value;
+            
+            if (enteredPassword === CORRECT_PASSWORD) {
+                // Store login state
+                sessionStorage.setItem('whiteboard_authenticated', 'true');
+                
+                // Switch to whiteboard
+                loginScreen.style.display = 'none';
+                whiteboardScreen.style.display = 'block';
+                
+                // Initialize the whiteboard
+                initCanvas();
+                
+                // Show welcome message
+                setTimeout(() => {
+                    alert('Welcome to the collaborative whiteboard with chat!\n\nFeatures:\n1. Draw with different colors\n2. Use eraser to remove\n3. Chat with others in real-time\n4. Messages disappear when someone starts typing new one\n\nChanges are automatically saved!');
+                }, 500);
+            } else {
+                errorMessage.style.display = 'block';
+                passwordInput.value = '';
+                passwordInput.focus();
+                
+                // Shake animation for error
+                loginScreen.style.animation = 'none';
+                setTimeout(() => {
+                    loginScreen.style.animation = 'shake 0.5s';
+                }, 10);
+            }
+        }
+        
+        // Event Listeners for Login
+        loginBtn.addEventListener('click', checkPassword);
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                checkPassword();
+            }
+        });
+        
+        // Check if already authenticated
+        window.addEventListener('load', function() {
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes shake {
+                    0%, 100% {transform: translateX(0);}
+                    10%, 30%, 50%, 70%, 90% {transform: translateX(-5px);}
+                    20%, 40%, 60%, 80% {transform: translateX(5px);}
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Check session storage
+            if (sessionStorage.getItem('whiteboard_authenticated') === 'true') {
+                loginScreen.style.display = 'none';
+                whiteboardScreen.style.display = 'block';
+                initCanvas();
+            } else {
+                passwordInput.focus();
+            }
+        });
+    </script>
+</body>
+</html>
