@@ -864,23 +864,6 @@ function setupEventListeners() {
             refreshInfoBtn.addEventListener('click', refreshAdminInfo);
         }
 
-        // Role selection
-        function selectRole(role) {
-            if (role === 'host') {
-                hostOption.classList.add('selected');
-                guestOption.classList.remove('selected');
-                connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect as Host';
-                appState.isHost = true;
-                appState.userName = "Host";
-            } else {
-                hostOption.classList.remove('selected');
-                guestOption.classList.add('selected');
-                connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect as Guest';
-                appState.isHost = false;
-                appState.userName = "Guest";
-            }
-        }
-
 
 // Handle connection
 async function handleConnect() {
