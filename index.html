@@ -1072,38 +1072,56 @@
         }
 
         // Setup real-time subscription for messages
-        function setupRealtimeSubscription() {
-            // Remove existing subscription if any
-            if (appState.realtimeSubscription) {
-                supabaseClient.removeSubscription(appState.realtimeSubscription);
+function setupRealtimeSubscription() {
+    console.log('🔄 Setting up real-time subscription for session:', appState.sessionId);
+    
+    // Remove existing subscription if any
+    if (appState.realtimeSubscription) {
+        console.log('🗑️ Removing old subscription');
+        supabaseClient.removeChannel(appState.realtimeSubscription);
+    }
+    
+    // Create new subscription
+    appState.realtimeSubscription = supabaseClient
+        .channel('messages-channel-' + appState.sessionId)
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'messages',
+                filter: 'session_id=eq.' + appState.sessionId
+            },
+            (payload) => {
+                console.log('📨 REAL-TIME EVENT RECEIVED:', payload);
+                console.log('New message from:', payload.new.sender_name);
+                console.log('Current user is:', appState.userName);
+                
+                // Don't show the user's own messages
+                if (payload.new.sender_id !== appState.userId) {
+                    console.log('✅ Displaying message from other user');
+                    displayMessage({
+                        id: payload.new.id,
+                        sender: payload.new.sender_name,
+                        text: payload.new.message,
+                        time: new Date(payload.new.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                        type: 'received'
+                    });
+                } else {
+                    console.log('⏩ Skipping own message');
+                }
             }
-            
-            // Subscribe to new messages
-            appState.realtimeSubscription = supabaseClient
-                .channel('messages-channel')
-                .on('postgres_changes', 
-                    { 
-                        event: 'INSERT', 
-                        schema: 'public', 
-                        table: 'messages',
-                        filter: `session_id=eq.${appState.sessionId}`
-                    }, 
-                    (payload) => {
-                        const newMessage = payload.new;
-                        // Don't show the user's own messages (they're already shown)
-                        if (newMessage.sender_id !== appState.userId) {
-                            displayMessage({
-                                id: newMessage.id,
-                                sender: newMessage.sender_name,
-                                text: newMessage.message,
-                                time: new Date(newMessage.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                                type: 'received'
-                            });
-                        }
-                    }
-                )
-                .subscribe();
-        }
+        )
+        .on('system', { event: 'channel_joined' }, () => {
+            console.log('✅ Successfully joined real-time channel');
+        })
+        .on('system', { event: 'channel_error' }, (error) => {
+            console.error('❌ Channel error:', error);
+        })
+        .subscribe((status) => {
+            console.log('📡 Subscription status:', status);
+        });
+}
 
         // Setup real-time subscription for images
         function setupImageSubscription() {
