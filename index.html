@@ -1177,6 +1177,62 @@ function setupRealtimeSubscription() {
         }, 30000); // Send ping every 30 seconds
     }
 }
+        // Reconnect when browser tab becomes visible again
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && appState.isConnected && appState.sessionId) {
+        console.log('👁️ Tab became visible, checking connection...');
+        
+        // Check if we're still subscribed
+        if (!appState.realtimeSubscription || !appState.realtimeSubscription.subscribed) {
+            console.log('🔄 Reconnecting real-time subscription');
+            setupRealtimeSubscription();
+        }
+    }
+});
+
+// Reconnect when browser comes online
+window.addEventListener('online', () => {
+    console.log('🌐 Browser is back online');
+    if (appState.isConnected && appState.sessionId) {
+        setTimeout(() => {
+            console.log('🔄 Reconnecting after coming online');
+            setupRealtimeSubscription();
+        }, 1000);
+    }
+});
+        // Periodic health check
+function startHealthChecks() {
+    setInterval(async () => {
+        if (appState.isConnected && appState.sessionId) {
+            try {
+                // Quick database query to check connection
+                const { count, error } = await supabaseClient
+                    .from('messages')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('session_id', appState.sessionId)
+                    .limit(1);
+                
+                if (error) {
+                    console.warn('⚠️ Health check failed:', error.message);
+                    // Try to re-establish subscriptions
+                    if (appState.isConnected) {
+                        setupRealtimeSubscription();
+                        setupImageSubscription();
+                    }
+                } else {
+                    console.log('✅ Health check passed');
+                }
+            } catch (err) {
+                console.warn('⚠️ Health check error:', err);
+            }
+        }
+    }, 60000); // Check every 60 seconds
+}
+
+// Call this after connecting
+// Add to your handleConnect() function after setupRealtimeSubscription():
+// startHealthChecks();
+        
 
         // Setup real-time subscription for images
 function setupImageSubscription() {
