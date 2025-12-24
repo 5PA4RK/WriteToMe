@@ -864,12 +864,11 @@ function setupEventListeners() {
             refreshInfoBtn.addEventListener('click', refreshAdminInfo);
         }
 
-
 // Handle connection
 async function handleConnect() {
-const userSelect = document.getElementById('userSelect');
-const passwordInput = document.getElementById('passwordInput');
-const connectBtn = document.getElementById('connectBtn');
+    // Get elements (already declared in setupEventListeners, but we need them here)
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
     
     const selectedRole = userSelect.value; // 'guest' or 'host'
     const password = passwordInput.value;
