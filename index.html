@@ -1124,31 +1124,34 @@ function setupRealtimeSubscription() {
 }
 
         // Setup real-time subscription for images
-        function setupImageSubscription() {
-            supabaseClient
-                .channel('images-channel')
-                .on('postgres_changes', 
-                    { 
-                        event: 'UPDATE', 
-                        schema: 'public', 
-                        table: 'sessions',
-                        filter: `session_id=eq.${appState.sessionId}`
-                    }, 
-                    async (payload) => {
-                        const updatedSession = payload.new;
-                        // Check if image was updated by other user
-                        if (updatedSession.current_image && updatedSession.current_image !== appState.currentImage) {
-                            appState.currentImage = updatedSession.current_image;
-                            displayImage(updatedSession.current_image);
-                            downloadImageBtn.disabled = false;
-                            
-                            // Add system message
-                            addSystemMessage(`${appState.otherUserName} shared an image.`);
-                        }
-                    }
-                )
-                .subscribe();
-        }
+function setupImageSubscription() {
+    console.log('🖼️ Setting up image subscription');
+    
+    supabaseClient
+        .channel('images-channel-' + appState.sessionId)
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'sessions',
+                filter: 'session_id=eq.' + appState.sessionId
+            },
+            (payload) => {
+                console.log('🖼️ Image update received:', payload);
+                const updatedSession = payload.new;
+                
+                if (updatedSession.current_image && updatedSession.current_image !== appState.currentImage) {
+                    console.log('✅ New image detected');
+                    appState.currentImage = updatedSession.current_image;
+                    displayImage(updatedSession.current_image);
+                    downloadImageBtn.disabled = false;
+                    addSystemMessage(`${appState.otherUserName} shared an image.`);
+                }
+            }
+        )
+        .subscribe();
+}
 
         // Load chat history from database
         async function loadChatHistory() {
