@@ -1081,9 +1081,17 @@ function setupRealtimeSubscription() {
         supabaseClient.removeChannel(appState.realtimeSubscription);
     }
     
-    // Create new subscription
+    // Create new subscription with better stability
     appState.realtimeSubscription = supabaseClient
-        .channel('messages-channel-' + appState.sessionId)
+        .channel('messages-channel-' + appState.sessionId, {
+            config: {
+                broadcast: { ack: true },
+                presence: { key: appState.userId }
+            }
+        })
+        .on('broadcast', { event: 'ping' }, ({ payload }) => {
+            console.log('🏓 Ping received:', payload);
+        })
         .on(
             'postgres_changes',
             {
@@ -1114,13 +1122,60 @@ function setupRealtimeSubscription() {
         )
         .on('system', { event: 'channel_joined' }, () => {
             console.log('✅ Successfully joined real-time channel');
+            // Start keep-alive pings
+            startKeepAlivePings();
         })
         .on('system', { event: 'channel_error' }, (error) => {
             console.error('❌ Channel error:', error);
+            // Try to reconnect after 3 seconds
+            setTimeout(() => {
+                console.log('🔄 Attempting to reconnect...');
+                if (appState.isConnected && appState.sessionId) {
+                    setupRealtimeSubscription();
+                }
+            }, 3000);
         })
-        .subscribe((status) => {
+        .on('system', { event: 'channel_closed' }, () => {
+            console.warn('⚠️ Channel closed unexpectedly');
+            // Try to reconnect after 5 seconds
+            setTimeout(() => {
+                console.log('🔄 Attempting to reconnect after close...');
+                if (appState.isConnected && appState.sessionId) {
+                    setupRealtimeSubscription();
+                }
+            }, 5000);
+        })
+        .subscribe(async (status) => {
             console.log('📡 Subscription status:', status);
+            
+            // If subscription fails, try to reconnect
+            if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+                console.warn('⚠️ Subscription in bad state, reconnecting...');
+                setTimeout(() => {
+                    if (appState.isConnected && appState.sessionId) {
+                        setupRealtimeSubscription();
+                    }
+                }, 2000);
+            }
         });
+    
+    // Keep-alive ping function
+    function startKeepAlivePings() {
+        if (appState.keepAliveInterval) {
+            clearInterval(appState.keepAliveInterval);
+        }
+        
+        appState.keepAliveInterval = setInterval(() => {
+            if (appState.realtimeSubscription && appState.realtimeSubscription.subscribed) {
+                appState.realtimeSubscription.send({
+                    type: 'broadcast',
+                    event: 'ping',
+                    payload: { userId: appState.userId, timestamp: Date.now() }
+                });
+                console.log('🏓 Sending keep-alive ping');
+            }
+        }, 30000); // Send ping every 30 seconds
+    }
 }
 
         // Setup real-time subscription for images
