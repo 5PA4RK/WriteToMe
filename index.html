@@ -813,28 +813,49 @@ select.form-input {
         }
 
         // Set up all event listeners
-        function setupEventListeners() {
-            // Connection modal
-            hostOption.addEventListener('click', () => selectRole('host'));
-            guestOption.addEventListener('click', () => selectRole('guest'));
-            connectBtn.addEventListener('click', handleConnect);
-            passwordInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') handleConnect();
-            });
-            
-            // Logout button
-            logoutBtn.addEventListener('click', handleLogout);
+ // Set up all event listeners
+function setupEventListeners() {
+    // Connection modal - NEW CODE
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const passwordHint = document.getElementById('passwordHint');
 
-            // Chat functionality
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') sendMessage();
-            });
-            messageInput.addEventListener('input', handleTyping);
-            sendMessageBtn.addEventListener('click', sendMessage);
-            clearChatBtn.addEventListener('click', clearChat);
+    // Update password hint when role changes
+    if (userSelect) {
+        userSelect.addEventListener('change', function() {
+            if (this.value === 'host') {
+                passwordHint.textContent = 'Host password: 123';
+            } else {
+                passwordHint.textContent = 'Guest password: 246';
+            }
+            // Clear any error
+            document.getElementById('passwordError').style.display = 'none';
+        });
+    }
 
-            // Image functionality
-            imagePlaceholder.addEventListener('click', () => fileInput.click());
+    // Allow Enter key in password field
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleConnect();
+        });
+    }
+
+    // Connect button
+    if (connectBtn) {
+        connectBtn.addEventListener('click', handleConnect);
+    }
+
+    // Chat functionality
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+    messageInput.addEventListener('input', handleTyping);
+    sendMessageBtn.addEventListener('click', sendMessage);
+    clearChatBtn.addEventListener('click', clearChat);
+
+    // Image functionality
+    imagePlaceholder.addEventListener('click', () => fileInput.click());
             imagePlaceholder.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 imagePlaceholder.style.borderColor = 'var(--accent-orange)';
