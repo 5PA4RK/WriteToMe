@@ -810,9 +810,9 @@ function setupEventListeners() {
     if (userSelect) {
         userSelect.addEventListener('change', function() {
             if (this.value === 'host') {
-                passwordHint.textContent = 'Host password: 123';
+                passwordHint.textContent = '';
             } else {
-                passwordHint.textContent = 'Guest password: 246';
+                passwordHint.textContent = '';
             }
             // Clear any error
             document.getElementById('passwordError').style.display = 'none';
@@ -884,11 +884,11 @@ async function handleConnect() {
     // Validate password based on role
     let isValid = false;
     if (selectedRole === 'host') {
-        isValid = password === '123';
+        isValid = password === 'Mira4994Mira';
         appState.isHost = true;
         appState.userName = "Host";
     } else { // guest
-        isValid = password === '246';
+        isValid = password === 'LovingStrangers';
         appState.isHost = false;
         appState.userName = "Guest";
     }
