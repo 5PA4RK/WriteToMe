@@ -875,58 +875,74 @@ select.form-input {
             }
         }
 
-        // Handle connection
-        async function handleConnect() {
-            const password = passwordInput.value;
-            
-            // Check password (123 for guests, any password for host)
-            if (!appState.isHost && password !== "123") {
-                passwordError.style.display = 'block';
-                passwordInput.focus();
-                return;
-            }
-            
-            passwordError.style.display = 'none';
-            
-            // Generate unique user ID and session ID
-            appState.userId = generateUserId();
-            appState.sessionId = generateSessionId();
-            appState.connectionTime = new Date();
-            
-            // Connect to Supabase
-            if (await connectToSupabase()) {
-                appState.isConnected = true;
-                
-                // Save session to localStorage
-                localStorage.setItem('writeToMe_session', JSON.stringify({
-                    isHost: appState.isHost,
-                    userName: appState.userName,
-                    userId: appState.userId,
-                    sessionId: appState.sessionId,
-                    connectionTime: appState.connectionTime
-                }));
-                
-                connectionModal.style.display = 'none';
-                updateUIAfterConnection();
-                
-                // Add connection message to chat
-                await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
-                
-                // Setup real-time subscription for new messages
-                setupRealtimeSubscription();
-                
-                // Setup real-time subscription for images
-                setupImageSubscription();
-                
-                // If host, show admin panel
-                if (appState.isHost) {
-                    adminPanel.style.display = 'block';
-                    refreshAdminInfo();
-                }
-            } else {
-                alert("Failed to connect to the server. Please try again.");
-            }
+
+// Handle connection
+async function handleConnect() {
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
+    const passwordError = document.getElementById('passwordError');
+    
+    const selectedRole = userSelect.value; // 'guest' or 'host'
+    const password = passwordInput.value;
+    
+    // Reset error
+    passwordError.style.display = 'none';
+    
+    // Validate password based on role
+    let isValid = false;
+    if (selectedRole === 'host') {
+        isValid = password === '123';
+        appState.isHost = true;
+        appState.userName = "Host";
+    } else { // guest
+        isValid = password === '246';
+        appState.isHost = false;
+        appState.userName = "Guest";
+    }
+    
+    if (!isValid) {
+        passwordError.style.display = 'block';
+        passwordInput.focus();
+        return;
+    }
+    
+    // Generate unique user ID and session ID
+    appState.userId = generateUserId();
+    appState.sessionId = generateSessionId();
+    appState.connectionTime = new Date();
+    
+    // Connect to Supabase
+    if (await connectToSupabase()) {
+        appState.isConnected = true;
+        
+        // Save session to localStorage
+        localStorage.setItem('writeToMe_session', JSON.stringify({
+            isHost: appState.isHost,
+            userName: appState.userName,
+            userId: appState.userId,
+            sessionId: appState.sessionId,
+            connectionTime: appState.connectionTime
+        }));
+        
+        connectionModal.style.display = 'none';
+        updateUIAfterConnection();
+        
+        // Add connection message to chat
+        await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
+        
+        // Setup real-time subscriptions
+        setupRealtimeSubscription();
+        setupImageSubscription();
+        
+        // If host, show admin panel
+        if (appState.isHost) {
+            adminPanel.style.display = 'block';
+            refreshAdminInfo();
         }
+    } else {
+        alert("Failed to connect to the server. Please try again.");
+    }
+}
 
         // Generate a unique user ID
         function generateUserId() {
