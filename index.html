@@ -878,9 +878,9 @@ select.form-input {
 
 // Handle connection
 async function handleConnect() {
-    const userSelect = document.getElementById('userSelect');
-    const passwordInput = document.getElementById('passwordInput');
-    const passwordError = document.getElementById('passwordError');
+const userSelect = document.getElementById('userSelect');
+const passwordInput = document.getElementById('passwordInput');
+const connectBtn = document.getElementById('connectBtn');
     
     const selectedRole = userSelect.value; // 'guest' or 'host'
     const password = passwordInput.value;
