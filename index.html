@@ -831,6 +831,11 @@ function setupEventListeners() {
         connectBtn.addEventListener('click', handleConnect);
     }
 
+        // ADD THIS LINE FOR LOGOUT:
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+
     // Chat functionality
     messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
