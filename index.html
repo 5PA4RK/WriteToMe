@@ -1071,66 +1071,79 @@ async function handleConnect() {
             imageUrlInput.disabled = false;
         }
 
-        // Handle logout
-        async function handleLogout() {
-            if (confirm("Are you sure you want to logout?")) {
-                // Remove session from localStorage
-                localStorage.removeItem('writeToMe_session');
-                
-                // Update session in database
-                if (appState.isConnected && appState.sessionId) {
-                    try {
-                        if (appState.isHost) {
-                            // Host leaves - end the session
-                            await supabaseClient
-                                .from('sessions')
-                                .update({ is_active: false, ended_at: new Date().toISOString() })
-                                .eq('session_id', appState.sessionId);
-                        } else {
-                            // Guest leaves - remove guest from session
-                            await supabaseClient
-                                .from('sessions')
-                                .update({ guest_id: null, guest_name: null, guest_connected_at: null })
-                                .eq('session_id', appState.sessionId);
-                        }
-                    } catch (error) {
-                        console.error("Error updating session on logout:", error);
-                    }
+// Handle logout
+async function handleLogout() {
+    if (confirm("Are you sure you want to logout?")) {
+        // Remove session from localStorage
+        localStorage.removeItem('writeToMe_session');
+        
+        // Update session in database
+        if (appState.isConnected && appState.sessionId) {
+            try {
+                if (appState.isHost) {
+                    // Host leaves - end the session
+                    await supabaseClient
+                        .from('sessions')
+                        .update({ 
+                            is_active: false, 
+                            ended_at: new Date().toISOString(),
+                            guest_id: null,
+                            guest_name: null,
+                            guest_connected_at: null
+                        })
+                        .eq('session_id', appState.sessionId);
+                } else {
+                    // Guest leaves - remove guest from session
+                    await supabaseClient
+                        .from('sessions')
+                        .update({ 
+                            guest_id: null, 
+                            guest_name: null, 
+                            guest_connected_at: null 
+                        })
+                        .eq('session_id', appState.sessionId);
                 }
-                
-                // Reset app state
-                appState.isHost = false;
-                appState.isConnected = false;
-                appState.userName = "Guest";
-                appState.userId = null;
-                appState.sessionId = null;
-                appState.messages = [];
-                appState.currentImage = null;
-                
-                // Reset UI
-                statusIndicator.classList.add('offline');
-                userRoleDisplay.textContent = "Disconnected";
-                currentUserSpan.textContent = "Guest";
-                logoutBtn.style.display = 'none';
-                messageInput.disabled = true;
-                sendMessageBtn.disabled = true;
-                uploadImageBtn.disabled = true;
-                imageUrlInput.disabled = true;
-                downloadImageBtn.disabled = true;
-                adminPanel.style.display = 'none';
-                
-                // Clear chat and image
-                chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
-                clearImage();
-                
-                // Show connection modal
-                connectionModal.style.display = 'flex';
-                
-                // Reset role selection
-               // selectRole('guest');
-                // passwordInput.value = '123';
+            } catch (error) {
+                console.error("Error updating session on logout:", error);
             }
         }
+        
+        // Reset app state
+        appState.isHost = false;
+        appState.isConnected = false;
+        appState.userName = "Guest";
+        appState.userId = null;
+        appState.sessionId = null;
+        appState.messages = [];
+        appState.currentImage = null;
+        appState.realtimeSubscription = null;
+        
+        // Reset UI
+        statusIndicator.classList.add('offline');
+        userRoleDisplay.textContent = "Disconnected";
+        currentUserSpan.textContent = "Guest";
+        logoutBtn.style.display = 'none';
+        messageInput.disabled = true;
+        sendMessageBtn.disabled = true;
+        uploadImageBtn.disabled = true;
+        imageUrlInput.disabled = true;
+        downloadImageBtn.disabled = true;
+        adminPanel.style.display = 'none';
+        
+        // Clear chat and image
+        chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
+        clearImage();
+        
+        // Show connection modal
+        connectionModal.style.display = 'flex';
+        
+        // Reset login form
+        document.getElementById('userSelect').value = 'guest';
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('passwordError').style.display = 'none';
+    }
+}
+
 
         // Setup real-time subscription for messages
 function setupRealtimeSubscription() {
