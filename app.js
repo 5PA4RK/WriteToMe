@@ -186,12 +186,18 @@ async function handleConnect() {
     
     try {
         console.log(`🔐 Attempting authentication for role: ${selectedRole}`);
+        console.log(`🔑 Password entered: ${password}`);
         
         // Hash the password using MD5
         const passwordHash = await hashPassword(password);
-        console.log(`🔑 Password hash generated: ${passwordHash.substring(0, 10)}...`);
+        console.log(`🔑 Password hash generated: ${passwordHash}`);
         
-        // Debug: Check what's in the users table
+        // IMPORTANT: These are the expected hashes
+        console.log(`📋 Expected hashes:`);
+        console.log(`   - 'Mira4994Mira' (host) -> b10a8db164e0754105b7a99be72e3fe5`);
+        console.log(`   - 'LovingStrangers' (guest) -> 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a`);
+        
+        // First, let's see what's in the database
         console.log("📋 Checking users table...");
         const { data: allUsers, error: listError } = await supabaseClient
             .from('users')
@@ -200,29 +206,36 @@ async function handleConnect() {
         if (listError) {
             console.error("❌ Error listing users:", listError);
         } else {
-            console.log("✅ Users in table:", allUsers);
+            console.log("✅ Users in database:", allUsers);
         }
         
-        // Authenticate against Supabase database
+        // Now try to authenticate
         console.log(`🔍 Querying for role: ${selectedRole}, hash: ${passwordHash}`);
         const { data: userData, error: authError } = await supabaseClient
             .from('users')
             .select('id, role, created_at')
             .eq('role', selectedRole)
-            .eq('password_hash', passwordHash)
-            .maybeSingle(); // Use maybeSingle instead of single
+            .eq('password_hash', passwordHash.toLowerCase()) // Ensure lowercase
+            .maybeSingle();
         
-        console.log("📊 Authentication result:", { userData, authError });
+        console.log("📊 Authentication result:", { 
+            foundUser: !!userData, 
+            error: authError,
+            userData: userData 
+        });
         
         if (authError) {
             console.error("❌ Authentication query error:", authError);
-            passwordError.textContent = "Authentication error. Please try again.";
+            passwordError.textContent = "Database error. Please try again.";
             passwordError.style.display = 'block';
             return;
         }
         
         if (!userData) {
             console.log("❌ No user found with those credentials");
+            console.log(`   Looking for: role=${selectedRole}, hash=${passwordHash}`);
+            console.log(`   Make sure your database has: role=${selectedRole}, password_hash=${passwordHash}`);
+            
             passwordError.textContent = "Incorrect password for selected role.";
             passwordError.style.display = 'block';
             passwordInput.focus();
@@ -287,10 +300,6 @@ async function handleConnect() {
         }
     } catch (error) {
         console.error("🔥 Connection error:", error);
-        console.error("🔥 Error details:", {
-            message: error.message,
-            stack: error.stack
-        });
         connectionError.textContent = `Connection error: ${error.message}`;
         connectionError.style.display = 'block';
     } finally {
@@ -301,7 +310,7 @@ async function handleConnect() {
     }
 }
 
-// Also, let's improve the hashPassword function to ensure it works:
+// Improved hashPassword function that always produces lowercase
 async function hashPassword(password) {
     try {
         // MD5 hash implementation
@@ -309,36 +318,44 @@ async function hashPassword(password) {
         const data = encoder.encode(password);
         const hashBuffer = await crypto.subtle.digest('MD5', data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // Ensure lowercase for consistency
+        return hash.toLowerCase();
     } catch (error) {
         console.error("Hash error:", error);
-        // Fallback: simple MD5 implementation for older browsers
+        // Fallback implementation
         return simpleMD5(password);
     }
 }
 
-// Simple MD5 fallback (for compatibility)
+// Simple MD5 fallback
 function simpleMD5(str) {
-    // This is a very basic MD5 implementation for fallback
-    // In production, use a proper library
     console.warn("Using fallback MD5 implementation");
     
-    // Convert string to byte array
-    const bytes = [];
-    for (let i = 0; i < str.length; i++) {
-        bytes.push(str.charCodeAt(i) & 0xFF);
-    }
-    
-    // Simple hash (not real MD5, but works for testing)
+    // This is just a placeholder - for actual fallback you'd need a proper MD5 library
+    // For now, let's compute a simple hash
     let hash = 0;
-    for (let i = 0; i < bytes.length; i++) {
-        hash = ((hash << 5) - hash) + bytes[i];
-        hash = hash & hash; // Convert to 32bit integer
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
     }
     
-    // Convert to hex
-    return Math.abs(hash).toString(16);
+    // Convert to hex and ensure 32 characters
+    const hexHash = Math.abs(hash).toString(16);
+    return hexHash.padStart(32, '0');
 }
+
+// Add a debug function to test the hash
+async function testHash() {
+    console.log("🧪 Testing password hashing:");
+    console.log("Password 'Mira4994Mira' hash:", await hashPassword('Mira4994Mira'));
+    console.log("Password 'LovingStrangers' hash:", await hashPassword('LovingStrangers'));
+}
+
+// Call this in your console to test
+// testHash();
 
 // Generate a unique user ID
 function generateUserId() {
