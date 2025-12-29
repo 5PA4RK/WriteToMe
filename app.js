@@ -166,7 +166,7 @@ async function handleConnect() {
     const userSelect = document.getElementById('userSelect');
     const passwordInput = document.getElementById('passwordInput');
     
-    const selectedRole = userSelect.value; // 'host' or 'guest'
+    const selectedRole = userSelect.value;
     const password = passwordInput.value;
     
     // Reset errors
@@ -185,87 +185,82 @@ async function handleConnect() {
     connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     
     try {
-        console.log(`🔐 Attempting authentication for role: ${selectedRole}`);
-        console.log(`🔑 Password entered: ${password}`);
+        console.log("=== DEBUGGING AUTHENTICATION ===");
+        console.log("Role selected:", selectedRole);
+        console.log("Password entered:", password);
         
-        // Hash the password using MD5
+        // 1. Generate hash from password
         const passwordHash = await hashPassword(password);
-        console.log(`🔑 Password hash generated: ${passwordHash}`);
+        console.log("Generated hash:", passwordHash);
         
-        // IMPORTANT: These are the expected hashes
-        console.log(`📋 Expected hashes:`);
-        console.log(`   - 'Mira4994Mira' (host) -> b10a8db164e0754105b7a99be72e3fe5`);
-        console.log(`   - 'LovingStrangers' (guest) -> 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a`);
+        // 2. Show what hash we expect
+        console.log("\nExpected hashes:");
+        console.log("For 'Mira4994Mira': b10a8db164e0754105b7a99be72e3fe5");
+        console.log("For 'LovingStrangers': 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
         
-        // First, let's see what's in the database
-        console.log("📋 Checking users table...");
-        const { data: allUsers, error: listError } = await supabaseClient
-            .from('users')
-            .select('role, password_hash');
-        
-        if (listError) {
-            console.error("❌ Error listing users:", listError);
+        // 3. Test if hash matches expected
+        if (selectedRole === 'host' && passwordHash === 'b10a8db164e0754105b7a99be72e3fe5') {
+            console.log("✅ Host hash matches expected!");
+        } else if (selectedRole === 'guest' && passwordHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a') {
+            console.log("✅ Guest hash matches expected!");
         } else {
-            console.log("✅ Users in database:", allUsers);
+            console.log("❌ Hash does NOT match expected!");
         }
         
-        // Now try to authenticate
-        console.log(`🔍 Querying for role: ${selectedRole}, hash: ${passwordHash}`);
-        const { data: userData, error: authError } = await supabaseClient
+        // 4. Check what's in the database
+        console.log("\nChecking database...");
+        const { data: dbUsers, error: dbError } = await supabaseClient
             .from('users')
-            .select('id, role, created_at')
-            .eq('role', selectedRole)
-            .eq('password_hash', passwordHash.toLowerCase()) // Ensure lowercase
-            .maybeSingle();
+            .select('*');
         
-        console.log("📊 Authentication result:", { 
-            foundUser: !!userData, 
-            error: authError,
-            userData: userData 
-        });
-        
-        if (authError) {
-            console.error("❌ Authentication query error:", authError);
-            passwordError.textContent = "Database error. Please try again.";
-            passwordError.style.display = 'block';
+        if (dbError) {
+            console.error("Database error:", dbError);
+            connectionError.textContent = "Database connection failed";
+            connectionError.style.display = 'block';
             return;
         }
         
-        if (!userData) {
-            console.log("❌ No user found with those credentials");
-            console.log(`   Looking for: role=${selectedRole}, hash=${passwordHash}`);
-            console.log(`   Make sure your database has: role=${selectedRole}, password_hash=${passwordHash}`);
+        console.log("Users in database:", dbUsers);
+        
+        // 5. Find matching user
+        const matchingUser = dbUsers.find(user => 
+            user.role === selectedRole && 
+            user.password_hash === passwordHash
+        );
+        
+        console.log("Matching user found:", matchingUser);
+        
+        if (!matchingUser) {
+            console.log("❌ No matching user found in database");
+            console.log("Looking for role:", selectedRole, "hash:", passwordHash);
             
-            passwordError.textContent = "Incorrect password for selected role.";
+            // Show what's available
+            const availableHashes = dbUsers
+                .filter(u => u.role === selectedRole)
+                .map(u => u.password_hash);
+            console.log("Available hashes for", selectedRole + ":", availableHashes);
+            
+            passwordError.textContent = "Incorrect password for selected role";
             passwordError.style.display = 'block';
-            passwordInput.focus();
-            passwordInput.select();
             return;
         }
         
         console.log("✅ Authentication successful!");
-        console.log("👤 User data:", userData);
         
-        // Authentication successful
+        // Continue with the rest of the connection logic...
         appState.isHost = selectedRole === 'host';
         appState.userName = selectedRole === 'host' ? "Host" : "Guest";
         
-        // Generate unique user ID and session ID
+        // Generate IDs and connect to session
         appState.userId = generateUserId();
         appState.sessionId = generateSessionId();
         appState.connectionTime = new Date();
         
-        console.log("🆔 Generated user ID:", appState.userId.substring(0, 15) + '...');
-        console.log("🆔 Generated session ID:", appState.sessionId);
-        
-        // Connect to session
         const sessionConnected = await connectToSupabase();
-        console.log("🔗 Session connection result:", sessionConnected);
         
         if (sessionConnected) {
             appState.isConnected = true;
             
-            // Save session to localStorage
             localStorage.setItem('writeToMe_session', JSON.stringify({
                 isHost: appState.isHost,
                 userName: appState.userName,
@@ -274,85 +269,54 @@ async function handleConnect() {
                 connectionTime: appState.connectionTime
             }));
             
-            console.log("💾 Session saved to localStorage");
-            
             connectionModal.style.display = 'none';
             updateUIAfterConnection();
             
-            // Add connection message to chat
             await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
-            console.log("📨 Welcome message sent");
             
-            // Setup real-time subscriptions
             setupRealtimeSubscription();
             setupImageSubscription();
             
-            // If host, show admin panel
             if (appState.isHost) {
                 adminPanel.style.display = 'block';
                 refreshAdminInfo();
             }
             
-            console.log("🎉 Connection complete!");
+            console.log("✅ Connection complete!");
         } else {
-            connectionError.textContent = "Failed to connect to chat session. Please try again.";
+            connectionError.textContent = "Failed to connect to chat session";
             connectionError.style.display = 'block';
         }
+        
     } catch (error) {
-        console.error("🔥 Connection error:", error);
-        connectionError.textContent = `Connection error: ${error.message}`;
+        console.error("Error:", error);
+        connectionError.textContent = `Error: ${error.message}`;
         connectionError.style.display = 'block';
     } finally {
-        // Reset button
         connectBtn.disabled = false;
         connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
-        console.log("🔄 Connect button reset");
     }
 }
 
-// Improved hashPassword function that always produces lowercase
-async function hashPassword(password) {
-    try {
-        // MD5 hash implementation
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        const hashBuffer = await crypto.subtle.digest('MD5', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        // Ensure lowercase for consistency
-        return hash.toLowerCase();
-    } catch (error) {
-        console.error("Hash error:", error);
-        // Fallback implementation
-        return simpleMD5(password);
-    }
-}
-
-// Simple MD5 fallback
-function simpleMD5(str) {
-    console.warn("Using fallback MD5 implementation");
+// Simple test function to verify hashing
+async function testHashing() {
+    console.log("Testing password hashing:");
     
-    // This is just a placeholder - for actual fallback you'd need a proper MD5 library
-    // For now, let's compute a simple hash
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
-    }
+    // Test host password
+    const hostHash = await hashPassword('Mira4994Mira');
+    console.log("'Mira4994Mira' ->", hostHash);
+    console.log("Expected: b10a8db164e0754105b7a99be72e3fe5");
+    console.log("Match:", hostHash === 'b10a8db164e0754105b7a99be72e3fe5');
     
-    // Convert to hex and ensure 32 characters
-    const hexHash = Math.abs(hash).toString(16);
-    return hexHash.padStart(32, '0');
+    // Test guest password  
+    const guestHash = await hashPassword('LovingStrangers');
+    console.log("'LovingStrangers' ->", guestHash);
+    console.log("Expected: 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
+    console.log("Match:", guestHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a');
 }
 
-// Add a debug function to test the hash
-async function testHash() {
-    console.log("🧪 Testing password hashing:");
-    console.log("Password 'Mira4994Mira' hash:", await hashPassword('Mira4994Mira'));
-    console.log("Password 'LovingStrangers' hash:", await hashPassword('LovingStrangers'));
-}
+// Run this in console to test
+// testHashing();
 
 // Call this in your console to test
 // testHash();
