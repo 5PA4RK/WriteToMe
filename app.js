@@ -1,6 +1,6 @@
-// Supabase Configuration
-const SUPABASE_URL = 'https://iipwepzadorscbnelvsc.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_M3QVKHdt_hMdDQS7m4xWRA_8CC3wUah';
+// Supabase Configuration - REPLACE WITH YOUR OWN CREDENTIALS
+const SUPABASE_URL = 'https://iipwepzadorscbnelvsc.supabase.co'; // Supabase URL
+const SUPABASE_ANON_KEY = 'sb_publishable_M3QVKHdt_hMdDQS7m4xWRA_8CC3wUah'; // Supabase anon key
 
 // Initialize Supabase client
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -54,41 +54,115 @@ const refreshInfoBtn = document.getElementById('refreshInfoBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const typingUser = document.getElementById('typingUser');
 
-// ==================== FIXED HASH FUNCTION ====================
+// Utility: Generate MD5 hash
 async function hashPassword(password) {
-    try {
-        // MD5 hash implementation
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        const hashBuffer = await crypto.subtle.digest('MD5', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        console.log("Hash function input:", password);
-        console.log("Hash function output:", hashHex);
-        console.log("Expected (Mira4994Mira): b10a8db164e0754105b7a99be72e3fe5");
-        console.log("Expected (LovingStrangers): 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
-        
-        return hashHex.toLowerCase(); // Ensure lowercase
-    } catch (error) {
-        console.error("Hash error:", error);
-        // Fallback
-        return simpleMD5(password);
-    }
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('MD5', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Simple fallback
-function simpleMD5(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+// Initialize the app
+async function initApp() {
+    // Check if user was previously connected
+    const savedSession = localStorage.getItem('writeToMe_session');
+    if (savedSession) {
+        const sessionData = JSON.parse(savedSession);
+        appState.isHost = sessionData.isHost;
+        appState.userName = sessionData.userName;
+        appState.userId = sessionData.userId;
+        appState.sessionId = sessionData.sessionId;
+        appState.isConnected = true;
+        
+        // Try to reconnect to the session
+        if (await reconnectToSession()) {
+            connectionModal.style.display = 'none';
+            updateUIAfterConnection();
+            loadChatHistory();
+            loadCurrentImage();
+        } else {
+            // Session expired or invalid
+            localStorage.removeItem('writeToMe_session');
+            connectionModal.style.display = 'flex';
+        }
+    } else {
+        connectionModal.style.display = 'flex';
     }
-    return Math.abs(hash).toString(16).padStart(32, '0');
+
+    // Set up event listeners
+    setupEventListeners();
 }
 
-// ==================== SIMPLIFIED handleConnect ====================
+// Set up all event listeners
+function setupEventListeners() {
+    // Connection modal
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const passwordHint = document.getElementById('passwordHint');
+
+    // Update password hint when role changes
+    if (userSelect) {
+        userSelect.addEventListener('change', function() {
+            // Clear any error
+            passwordError.style.display = 'none';
+            connectionError.style.display = 'none';
+        });
+    }
+
+    // Allow Enter key in password field
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleConnect();
+        });
+    }
+
+    // Connect button
+    if (connectBtn) {
+        connectBtn.addEventListener('click', handleConnect);
+    }
+
+    // Logout button
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+
+    // Chat functionality
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+    messageInput.addEventListener('input', handleTyping);
+    sendMessageBtn.addEventListener('click', sendMessage);
+    clearChatBtn.addEventListener('click', clearChat);
+
+    // Image functionality
+    imagePlaceholder.addEventListener('click', () => fileInput.click());
+    imagePlaceholder.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imagePlaceholder.style.borderColor = 'var(--accent-orange)';
+        imagePlaceholder.style.backgroundColor = 'rgba(255, 152, 0, 0.1)';
+    });
+    imagePlaceholder.addEventListener('dragleave', () => {
+        imagePlaceholder.style.borderColor = 'var(--border-color)';
+        imagePlaceholder.style.backgroundColor = '';
+    });
+    imagePlaceholder.addEventListener('drop', handleImageDrop);
+    fileInput.addEventListener('change', handleFileSelect);
+    uploadImageBtn.addEventListener('click', uploadImageFromUrl);
+    downloadImageBtn.addEventListener('click', downloadImage);
+    clearImageBtn.addEventListener('click', clearImage);
+    imageUrlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') uploadImageFromUrl();
+    });
+
+    // Admin panel
+    adminToggle.addEventListener('click', toggleAdminPanel);
+    refreshInfoBtn.addEventListener('click', refreshAdminInfo);
+}
+
+// Handle connection with Supabase authentication
+// Handle connection with Supabase authentication
 async function handleConnect() {
     const userSelect = document.getElementById('userSelect');
     const passwordInput = document.getElementById('passwordInput');
@@ -112,75 +186,38 @@ async function handleConnect() {
     connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     
     try {
-        console.log("🔐 Authentication attempt for role:", selectedRole);
-        console.log("🔑 Password entered:", password);
-        
-        // Generate hash
+        // Hash the password using MD5
         const passwordHash = await hashPassword(password);
-        console.log("🔑 Generated hash:", passwordHash);
         
-        // TEST: Verify hash matches expected
-        let expectedHash = '';
-        if (selectedRole === 'host') {
-            expectedHash = 'b10a8db164e0754105b7a99be72e3fe5';
-        } else {
-            expectedHash = '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a';
-        }
-        
-        console.log("✅ Expected hash:", expectedHash);
-        console.log("✅ Hashes match?", passwordHash === expectedHash);
-        
-        // Query database
-        const { data: users, error: dbError } = await supabaseClient
-            .from('users')
+        // Check against database
+        const { data: passwordData, error: authError } = await supabaseClient
+            .from('passwords')
             .select('*')
-            .eq('role', selectedRole);
+            .eq('role', selectedRole)
+            .eq('password_hash', passwordHash)
+            .single();
         
-        if (dbError) {
-            console.error("❌ Database error:", dbError);
-            connectionError.textContent = "Database connection failed";
-            connectionError.style.display = 'block';
-            return;
-        }
-        
-        console.log("📋 Users found in DB:", users);
-        
-        // Find matching user (case-insensitive comparison)
-        const matchingUser = users.find(user => 
-            user.password_hash.toLowerCase() === passwordHash.toLowerCase()
-        );
-        
-        if (!matchingUser) {
-            console.log("❌ No matching user found!");
-            console.log("Looking for hash:", passwordHash);
-            console.log("Available hashes:", users.map(u => u.password_hash));
-            
+        if (authError || !passwordData) {
             passwordError.textContent = "Incorrect password for selected role";
             passwordError.style.display = 'block';
+            passwordInput.focus();
             return;
         }
         
-        console.log("✅ Authentication successful! User:", matchingUser);
-        
-        // Proceed with connection
+        // Authentication successful
         appState.isHost = selectedRole === 'host';
         appState.userName = selectedRole === 'host' ? "Host" : "Guest";
         
-        // Generate IDs
+        // Generate unique user ID and session ID
         appState.userId = generateUserId();
         appState.sessionId = generateSessionId();
         appState.connectionTime = new Date();
         
-        console.log("🆔 Generated User ID:", appState.userId);
-        console.log("🆔 Generated Session ID:", appState.sessionId);
-        
         // Connect to session
-        const sessionConnected = await connectToSupabase();
-        
-        if (sessionConnected) {
+        if (await connectToSupabase()) {
             appState.isConnected = true;
             
-            // Save to localStorage
+            // Save session to localStorage
             localStorage.setItem('writeToMe_session', JSON.stringify({
                 isHost: appState.isHost,
                 userName: appState.userName,
@@ -189,265 +226,59 @@ async function handleConnect() {
                 connectionTime: appState.connectionTime
             }));
             
-            // Update UI
             connectionModal.style.display = 'none';
             updateUIAfterConnection();
             
-            // Send welcome message
+            // Add connection message to chat
             await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
             
-            // Setup subscriptions
+            // Setup real-time subscriptions
             setupRealtimeSubscription();
             setupImageSubscription();
             
-            // Show admin panel for host
+            // If host, show admin panel
             if (appState.isHost) {
                 adminPanel.style.display = 'block';
-                setTimeout(refreshAdminInfo, 500);
+                refreshAdminInfo();
             }
-            
-            console.log("🎉 Connection complete!");
         } else {
             connectionError.textContent = "Failed to connect to chat session";
             connectionError.style.display = 'block';
         }
-        
     } catch (error) {
-        console.error("🔥 Error:", error);
-        connectionError.textContent = `Error: ${error.message}`;
+        console.error("Connection error:", error);
+        connectionError.textContent = "Connection error. Please try again.";
         connectionError.style.display = 'block';
     } finally {
+        // Reset button
         connectBtn.disabled = false;
         connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
     }
 }
 
-// ==================== ADD THIS TEST FUNCTION ====================
-async function testConnection() {
-    console.log("🧪 TESTING CONNECTION...");
-    
-    // Test 1: Hash generation
-    console.log("\n1. Testing hash generation:");
-    const hostHash = await hashPassword('Mira4994Mira');
-    const guestHash = await hashPassword('LovingStrangers');
-    
-    console.log("Mira4994Mira ->", hostHash);
-    console.log("Expected: b10a8db164e0754105b7a99be72e3fe5");
-    console.log("Match?", hostHash === 'b10a8db164e0754105b7a99be72e3fe5');
-    
-    console.log("\nLovingStrangers ->", guestHash);
-    console.log("Expected: 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
-    console.log("Match?", guestHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a');
-    
-    // Test 2: Database connection
-    console.log("\n2. Testing database connection:");
-    const { data: users, error } = await supabaseClient.from('users').select('*');
-    
-    if (error) {
-        console.error("Database error:", error);
-    } else {
-        console.log("Users in database:", users);
-        
-        // Test 3: Check specific queries
-        console.log("\n3. Testing specific queries:");
-        
-        // Query for host
-        const { data: hosts } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('role', 'host');
-        
-        console.log("Hosts found:", hosts);
-        
-        // Query for guest  
-        const { data: guests } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('role', 'guest');
-            
-        console.log("Guests found:", guests);
-    }
+// Add this MD5 hash function at the top of your script:
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('MD5', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Call this from browser console: testConnection()
-
-// ==================== DATABASE SETUP FUNCTION ====================
-async function setupDatabase() {
-    console.log("=== SETTING UP DATABASE ===");
-    
-    // First, check current state
-    const { data: currentUsers } = await supabaseClient
-        .from('users')
-        .select('*');
-    
-    console.log("Current users:", currentUsers);
-    
-    // Delete if placeholder text exists
-    if (currentUsers && currentUsers.some(u => u.password_hash.includes('md5_hash_of_'))) {
-        console.log("Deleting placeholder users...");
-        await supabaseClient.from('users').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    }
-    
-    // Insert correct users
-    console.log("Inserting correct users...");
-    const { data: newUsers, error } = await supabaseClient
-        .from('users')
-        .insert([
-            { role: 'host', password_hash: 'b10a8db164e0754105b7a99be72e3fe5' },
-            { role: 'guest', password_hash: '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a' }
-        ])
-        .select();
-    
-    if (error) {
-        console.error("Error setting up database:", error);
-    } else {
-        console.log("Database setup complete:", newUsers);
-    }
-}
-
-// ==================== TEST FUNCTION ====================
-async function testEverything() {
-    console.log("=== TESTING EVERYTHING ===");
-    
-    // Test 1: Hash generation
-    console.log("\n1. Testing hash generation:");
-    const hostHash = await hashPassword('Mira4994Mira');
-    const guestHash = await hashPassword('LovingStrangers');
-    
-    console.log("Mira4994Mira ->", hostHash);
-    console.log("Expected: b10a8db164e0754105b7a99be72e3fe5");
-    console.log("Match?", hostHash === 'b10a8db164e0754105b7a99be72e3fe5');
-    
-    console.log("\nLovingStrangers ->", guestHash);
-    console.log("Expected: 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
-    console.log("Match?", guestHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a');
-    
-    // Test 2: Database connection
-    console.log("\n2. Testing database connection:");
-    const { data: users } = await supabaseClient.from('users').select('*');
-    console.log("Users in database:", users);
-    
-    // Test 3: Check if hashes match database
-    if (users) {
-        console.log("\n3. Checking database hashes:");
-        const hostInDB = users.find(u => u.role === 'host');
-        const guestInDB = users.find(u => u.role === 'guest');
-        
-        if (hostInDB) {
-            console.log("Host in DB:", hostInDB.password_hash);
-            console.log("Matches our hash?", hostInDB.password_hash === hostHash);
-        }
-        
-        if (guestInDB) {
-            console.log("Guest in DB:", guestInDB.password_hash);
-            console.log("Matches our hash?", guestInDB.password_hash === guestHash);
-        }
-    }
-}
-
-// ==================== REST OF YOUR FUNCTIONS (UNCHANGED) ====================
-// Initialize the app
-async function initApp() {
-    console.log("App initializing...");
-    
-    // Check if user was previously connected
-    const savedSession = localStorage.getItem('writeToMe_session');
-    if (savedSession) {
-        const sessionData = JSON.parse(savedSession);
-        appState.isHost = sessionData.isHost;
-        appState.userName = sessionData.userName;
-        appState.userId = sessionData.userId;
-        appState.sessionId = sessionData.sessionId;
-        appState.isConnected = true;
-        
-        if (await reconnectToSession()) {
-            connectionModal.style.display = 'none';
-            updateUIAfterConnection();
-            loadChatHistory();
-            loadCurrentImage();
-        } else {
-            localStorage.removeItem('writeToMe_session');
-            connectionModal.style.display = 'flex';
-        }
-    } else {
-        connectionModal.style.display = 'flex';
-    }
-    
-    setupEventListeners();
-    
-    // Run tests automatically
-    setTimeout(() => {
-        testEverything();
-        // setupDatabase(); // Uncomment this if you need to reset database
-    }, 1000);
-}
-
-function setupEventListeners() {
-    const userSelect = document.getElementById('userSelect');
-    const passwordInput = document.getElementById('passwordInput');
-    const connectBtn = document.getElementById('connectBtn');
-    
-    if (userSelect) {
-        userSelect.addEventListener('change', function() {
-            passwordError.style.display = 'none';
-            connectionError.style.display = 'none';
-        });
-    }
-    
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleConnect();
-        });
-    }
-    
-    if (connectBtn) {
-        connectBtn.addEventListener('click', handleConnect);
-    }
-    
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-    }
-    
-    messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
-    messageInput.addEventListener('input', handleTyping);
-    sendMessageBtn.addEventListener('click', sendMessage);
-    clearChatBtn.addEventListener('click', clearChat);
-    
-    imagePlaceholder.addEventListener('click', () => fileInput.click());
-    imagePlaceholder.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        imagePlaceholder.style.borderColor = 'var(--accent-orange)';
-        imagePlaceholder.style.backgroundColor = 'rgba(255, 152, 0, 0.1)';
-    });
-    imagePlaceholder.addEventListener('dragleave', () => {
-        imagePlaceholder.style.borderColor = 'var(--border-color)';
-        imagePlaceholder.style.backgroundColor = '';
-    });
-    imagePlaceholder.addEventListener('drop', handleImageDrop);
-    fileInput.addEventListener('change', handleFileSelect);
-    uploadImageBtn.addEventListener('click', uploadImageFromUrl);
-    downloadImageBtn.addEventListener('click', downloadImage);
-    clearImageBtn.addEventListener('click', clearImage);
-    imageUrlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') uploadImageFromUrl();
-    });
-    
-    adminToggle.addEventListener('click', toggleAdminPanel);
-    refreshInfoBtn.addEventListener('click', refreshAdminInfo);
-}
-
+// Generate a unique user ID
 function generateUserId() {
     return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+// Generate a session ID
 function generateSessionId() {
     return 'session_' + Date.now().toString(36);
 }
 
+// Connect to Supabase and create/join session
 async function connectToSupabase() {
     try {
+        // Check if session exists
         const { data: existingSessions, error: checkError } = await supabaseClient
             .from('sessions')
             .select('*')
@@ -456,34 +287,42 @@ async function connectToSupabase() {
         
         if (checkError) throw checkError;
         
+        // If no active session, create one (Host only)
         if (existingSessions.length === 0) {
             if (appState.isHost) {
+                // Host creates a new session
                 const { data: newSession, error: sessionError } = await supabaseClient
                     .from('sessions')
-                    .insert([{
-                        session_id: appState.sessionId,
-                        host_id: appState.userId,
-                        host_name: appState.userName,
-                        is_active: true,
-                        created_at: new Date().toISOString()
-                    }])
+                    .insert([
+                        {
+                            session_id: appState.sessionId,
+                            host_id: appState.userId,
+                            host_name: appState.userName,
+                            is_active: true,
+                            created_at: new Date().toISOString()
+                        }
+                    ])
                     .select()
                     .single();
                 
                 if (sessionError) throw sessionError;
                 return true;
             } else {
+                // Guest cannot create session, only join
                 alert("No active session found. Please ask the Host to create a session first.");
                 return false;
             }
         } else {
+            // Join existing session
             const session = existingSessions[0];
             
+            // Check if session already has 2 users
             if (session.guest_id && session.guest_id !== appState.userId) {
                 alert("Session is full. Only 2 users can connect at a time.");
                 return false;
             }
             
+            // Update session with guest info
             if (!appState.isHost) {
                 const { error: updateError } = await supabaseClient
                     .from('sessions')
@@ -508,8 +347,10 @@ async function connectToSupabase() {
     }
 }
 
+// Reconnect to existing session
 async function reconnectToSession() {
     try {
+        // Check if session still exists
         const { data: session, error } = await supabaseClient
             .from('sessions')
             .select('*')
@@ -519,6 +360,7 @@ async function reconnectToSession() {
         
         if (error || !session) return false;
         
+        // Check if user is still in session
         if (appState.isHost) {
             if (session.host_id !== appState.userId) return false;
             appState.otherUserName = session.guest_name || "Guest";
@@ -527,6 +369,7 @@ async function reconnectToSession() {
             appState.otherUserName = session.host_name;
         }
         
+        // Setup real-time subscriptions
         setupRealtimeSubscription();
         setupImageSubscription();
         
@@ -537,26 +380,36 @@ async function reconnectToSession() {
     }
 }
 
+// Update UI after connection
 function updateUIAfterConnection() {
     statusIndicator.classList.remove('offline');
     userRoleDisplay.textContent = `${appState.userName} (Connected)`;
     currentUserSpan.textContent = appState.userName;
     
+    // Show logout button
     logoutBtn.style.display = 'flex';
+    
+    // Enable chat controls
     messageInput.disabled = false;
     sendMessageBtn.disabled = false;
     messageInput.focus();
+    
+    // Enable image controls
     uploadImageBtn.disabled = false;
     imageUrlInput.disabled = false;
 }
 
+// Handle logout
 async function handleLogout() {
     if (confirm("Are you sure you want to logout?")) {
+        // Remove session from localStorage
         localStorage.removeItem('writeToMe_session');
         
+        // Update session in database
         if (appState.isConnected && appState.sessionId) {
             try {
                 if (appState.isHost) {
+                    // Host leaves - end the session
                     await supabaseClient
                         .from('sessions')
                         .update({ 
@@ -568,6 +421,7 @@ async function handleLogout() {
                         })
                         .eq('session_id', appState.sessionId);
                 } else {
+                    // Guest leaves - remove guest from session
                     await supabaseClient
                         .from('sessions')
                         .update({ 
@@ -582,6 +436,7 @@ async function handleLogout() {
             }
         }
         
+        // Reset app state
         appState.isHost = false;
         appState.isConnected = false;
         appState.userName = "Guest";
@@ -591,6 +446,7 @@ async function handleLogout() {
         appState.currentImage = null;
         appState.realtimeSubscription = null;
         
+        // Reset UI
         statusIndicator.classList.add('offline');
         userRoleDisplay.textContent = "Disconnected";
         currentUserSpan.textContent = "Guest";
@@ -602,31 +458,32 @@ async function handleLogout() {
         downloadImageBtn.disabled = true;
         adminPanel.style.display = 'none';
         
+        // Clear chat and image
         chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
         clearImage();
         
+        // Show connection modal
         connectionModal.style.display = 'flex';
+        
+        // Reset login form
         document.getElementById('userSelect').value = 'host';
         document.getElementById('passwordInput').value = '';
         passwordError.style.display = 'none';
         connectionError.style.display = 'none';
     }
 }
-// ... (Keep all your other functions as they are - setupRealtimeSubscription, setupImageSubscription, etc.)
-// Just copy the rest of your functions from your current file starting from setupRealtimeSubscription
 
-// ==================== COPY THE REST OF YOUR FUNCTIONS HERE ====================
-// Copy everything from "Setup real-time subscription for messages" to the end of your file
-// Just paste them here without changes
-
+// Setup real-time subscription for messages
 function setupRealtimeSubscription() {
     console.log('🔄 Setting up real-time subscription for session:', appState.sessionId);
     
+    // Remove existing subscription if any
     if (appState.realtimeSubscription) {
         console.log('🗑️ Removing old subscription');
         supabaseClient.removeChannel(appState.realtimeSubscription);
     }
     
+    // Create new subscription
     appState.realtimeSubscription = supabaseClient
         .channel('messages-channel-' + appState.sessionId)
         .on(
@@ -640,6 +497,7 @@ function setupRealtimeSubscription() {
             (payload) => {
                 console.log('📨 REAL-TIME EVENT RECEIVED:', payload);
                 
+                // Don't show the user's own messages
                 if (payload.new.sender_id !== appState.userId) {
                     console.log('✅ Displaying message from other user');
                     displayMessage({
@@ -665,6 +523,7 @@ function setupRealtimeSubscription() {
         });
 }
 
+// Setup real-time subscription for images
 function setupImageSubscription() {
     console.log('🖼️ Setting up image subscription');
     
@@ -694,6 +553,7 @@ function setupImageSubscription() {
         .subscribe();
 }
 
+// Load chat history from database
 async function loadChatHistory() {
     try {
         const { data: messages, error } = await supabaseClient
@@ -704,9 +564,11 @@ async function loadChatHistory() {
         
         if (error) throw error;
         
+        // Clear current messages
         chatMessages.innerHTML = '';
         appState.messages = [];
         
+        // Display each message
         messages.forEach(msg => {
             const messageType = msg.sender_id === appState.userId ? 'sent' : 'received';
             displayMessage({
@@ -722,6 +584,7 @@ async function loadChatHistory() {
     }
 }
 
+// Load current image from database
 async function loadCurrentImage() {
     try {
         const { data: session, error } = await supabaseClient
@@ -742,6 +605,7 @@ async function loadCurrentImage() {
     }
 }
 
+// Save message to database
 async function saveMessageToDB(senderName, messageText) {
     try {
         const { data, error } = await supabaseClient
@@ -766,10 +630,12 @@ async function saveMessageToDB(senderName, messageText) {
     }
 }
 
+// Send a chat message
 async function sendMessage() {
     const messageText = messageInput.value.trim();
     if (!messageText) return;
     
+    // Create message object
     const message = {
         id: Date.now(),
         sender: appState.userName,
@@ -778,12 +644,20 @@ async function sendMessage() {
         type: 'sent'
     };
     
+    // Add to messages array
     appState.messages.push(message);
+    
+    // Display message immediately
     displayMessage(message);
+    
+    // Clear input
     messageInput.value = '';
+    
+    // Save to database
     await saveMessageToDB(appState.userName, messageText);
 }
 
+// Display a message in the chat
 function displayMessage(message) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${message.type}`;
@@ -799,6 +673,7 @@ function displayMessage(message) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+// Add a system message
 function addSystemMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message received';
@@ -811,18 +686,24 @@ function addSystemMessage(text) {
     
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Also save to database
     saveMessageToDB('System', text);
 }
 
+// Handle typing indicator
 function handleTyping() {
+    // Clear previous timeout
     if (appState.typingTimeout) {
         clearTimeout(appState.typingTimeout);
     }
 }
 
+// Clear chat history
 async function clearChat() {
     if (confirm("Are you sure you want to clear all chat messages?")) {
         try {
+            // Delete messages from database for this session
             const { error } = await supabaseClient
                 .from('messages')
                 .delete()
@@ -830,6 +711,7 @@ async function clearChat() {
             
             if (error) throw error;
             
+            // Clear local chat
             chatMessages.innerHTML = '';
             appState.messages = [];
             addSystemMessage("Chat history has been cleared.");
@@ -840,6 +722,7 @@ async function clearChat() {
     }
 }
 
+// Handle image drop
 function handleImageDrop(e) {
     e.preventDefault();
     imagePlaceholder.style.borderColor = 'var(--border-color)';
@@ -856,6 +739,7 @@ function handleImageDrop(e) {
     }
 }
 
+// Handle file selection
 function handleFileSelect(e) {
     const file = e.target.files[0];
     if (file && file.type.startsWith('image/')) {
@@ -863,7 +747,9 @@ function handleFileSelect(e) {
     }
 }
 
+// Load image file
 function loadImageFile(file) {
+    // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
         alert("Image size should be less than 5MB.");
         return;
@@ -873,30 +759,48 @@ function loadImageFile(file) {
     reader.onload = async function(e) {
         appState.currentImage = e.target.result;
         displayImage(appState.currentImage);
+        
+        // Enable download button
         downloadImageBtn.disabled = false;
+        
+        // Save image to database
         await saveImageToDB(appState.currentImage);
+        
+        // Add system message
         addSystemMessage(`${appState.userName} shared an image.`);
     };
     reader.readAsDataURL(file);
 }
 
+// Upload image from URL
 async function uploadImageFromUrl() {
     const url = imageUrlInput.value.trim();
     if (!url) return;
     
+    // Simple URL validation
     if (!url.match(/\.(jpeg|jpg|gif|png|webp)$/)) {
         alert("Please enter a valid image URL (jpg, png, gif, webp).");
         return;
     }
     
+    // Set image preview
     appState.currentImage = url;
     displayImage(url);
+    
+    // Enable download button
     downloadImageBtn.disabled = false;
+    
+    // Save image to database
     await saveImageToDB(url);
+    
+    // Add system message
     addSystemMessage(`${appState.userName} shared an image from URL.`);
+    
+    // Clear URL input
     imageUrlInput.value = '';
 }
 
+// Save image to database
 async function saveImageToDB(imageData) {
     try {
         const { error } = await supabaseClient
@@ -913,12 +817,14 @@ async function saveImageToDB(imageData) {
     }
 }
 
+// Display image in preview
 function displayImage(src) {
     imagePreview.src = src;
     imagePreview.style.display = 'block';
     imagePlaceholder.style.display = 'none';
 }
 
+// Download image
 function downloadImage() {
     if (!appState.currentImage) return;
     
@@ -932,9 +838,11 @@ function downloadImage() {
     addSystemMessage(`${appState.userName} downloaded the image.`);
 }
 
+// Clear image
 async function clearImage() {
     if (confirm("Are you sure you want to clear the image?")) {
         try {
+            // Clear image in database
             const { error } = await supabaseClient
                 .from('sessions')
                 .update({ current_image: null })
@@ -942,10 +850,13 @@ async function clearImage() {
             
             if (error) throw error;
             
+            // Clear local state
             appState.currentImage = null;
             imagePreview.style.display = 'none';
             imagePlaceholder.style.display = 'flex';
             downloadImageBtn.disabled = true;
+            
+            // Add system message
             addSystemMessage(`${appState.userName} cleared the image.`);
         } catch (error) {
             console.error("Error clearing image:", error);
@@ -954,6 +865,7 @@ async function clearImage() {
     }
 }
 
+// Toggle admin panel visibility
 function toggleAdminPanel() {
     appState.adminVisible = !appState.adminVisible;
     adminContent.classList.toggle('show', appState.adminVisible);
@@ -966,10 +878,12 @@ function toggleAdminPanel() {
     }
 }
 
+// Refresh admin information
 async function refreshAdminInfo() {
     if (!appState.isHost) return;
     
     try {
+        // Get session info from database
         const { data: session, error } = await supabaseClient
             .from('sessions')
             .select('*')
@@ -985,6 +899,7 @@ async function refreshAdminInfo() {
         const minutes = Math.floor(connectionDuration / 60);
         const seconds = connectionDuration % 60;
         
+        // Get message count
         const { count: messageCount } = await supabaseClient
             .from('messages')
             .select('*', { count: 'exact', head: true })
@@ -1019,5 +934,5 @@ async function refreshAdminInfo() {
     }
 }
 
-// Initialize the app
+// Initialize the app when page loads
 document.addEventListener('DOMContentLoaded', initApp);
