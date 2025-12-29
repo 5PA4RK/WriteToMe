@@ -57,30 +57,38 @@ const typingUser = document.getElementById('typingUser');
 // ==================== FIXED HASH FUNCTION ====================
 async function hashPassword(password) {
     try {
-        // Convert string to bytes
+        // MD5 hash implementation
         const encoder = new TextEncoder();
         const data = encoder.encode(password);
-        
-        // Hash with MD5
         const hashBuffer = await crypto.subtle.digest('MD5', data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         
-        // Convert to hex string (ensure lowercase)
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+        console.log("Hash function input:", password);
+        console.log("Hash function output:", hashHex);
+        console.log("Expected (Mira4994Mira): b10a8db164e0754105b7a99be72e3fe5");
+        console.log("Expected (LovingStrangers): 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
+        
+        return hashHex.toLowerCase(); // Ensure lowercase
     } catch (error) {
         console.error("Hash error:", error);
-        // Fallback: Simple hash for compatibility
-        let hash = 0;
-        for (let i = 0; i < password.length; i++) {
-            const char = password.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        return Math.abs(hash).toString(16).padStart(32, '0');
+        // Fallback
+        return simpleMD5(password);
     }
 }
 
-// ==================== SIMPLIFIED AUTHENTICATION ====================
+// Simple fallback
+function simpleMD5(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16).padStart(32, '0');
+}
+
+// ==================== SIMPLIFIED handleConnect ====================
 async function handleConnect() {
     const userSelect = document.getElementById('userSelect');
     const passwordInput = document.getElementById('passwordInput');
@@ -104,71 +112,57 @@ async function handleConnect() {
     connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     
     try {
-        console.log("=== AUTHENTICATION START ===");
-        console.log("Role:", selectedRole);
-        console.log("Password:", password);
+        console.log("🔐 Authentication attempt for role:", selectedRole);
+        console.log("🔑 Password entered:", password);
         
         // Generate hash
         const passwordHash = await hashPassword(password);
-        console.log("Generated hash:", passwordHash);
+        console.log("🔑 Generated hash:", passwordHash);
         
-        // Debug: Show expected hashes
-        console.log("\nExpected MD5 hashes:");
-        console.log("Mira4994Mira -> b10a8db164e0754105b7a99be72e3fe5");
-        console.log("LovingStrangers -> 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
-        
-        // Check if our hash matches expected
-        let hashMatches = false;
+        // TEST: Verify hash matches expected
+        let expectedHash = '';
         if (selectedRole === 'host') {
-            hashMatches = passwordHash === 'b10a8db164e0754105b7a99be72e3fe5';
-            console.log("Host hash matches expected?", hashMatches);
+            expectedHash = 'b10a8db164e0754105b7a99be72e3fe5';
         } else {
-            hashMatches = passwordHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a';
-            console.log("Guest hash matches expected?", hashMatches);
+            expectedHash = '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a';
         }
         
-        if (!hashMatches) {
-            console.log("❌ Hash doesn't match expected value!");
-            passwordError.textContent = "Incorrect password";
-            passwordError.style.display = 'block';
-            return;
-        }
+        console.log("✅ Expected hash:", expectedHash);
+        console.log("✅ Hashes match?", passwordHash === expectedHash);
         
-        console.log("✅ Hash is correct!");
-        
-        // Now check database
-        console.log("\nQuerying database...");
+        // Query database
         const { data: users, error: dbError } = await supabaseClient
             .from('users')
             .select('*')
             .eq('role', selectedRole);
         
         if (dbError) {
-            console.error("Database error:", dbError);
-            connectionError.textContent = "Database error: " + dbError.message;
+            console.error("❌ Database error:", dbError);
+            connectionError.textContent = "Database connection failed";
             connectionError.style.display = 'block';
             return;
         }
         
-        console.log("Users found:", users);
+        console.log("📋 Users found in DB:", users);
         
-        // Check if any user matches our hash
-        const matchingUser = users.find(user => user.password_hash === passwordHash);
+        // Find matching user (case-insensitive comparison)
+        const matchingUser = users.find(user => 
+            user.password_hash.toLowerCase() === passwordHash.toLowerCase()
+        );
         
         if (!matchingUser) {
-            console.log("❌ No user found with this hash in database");
-            console.log("Database has these hashes for", selectedRole + ":");
-            users.forEach(u => console.log("  -", u.password_hash));
+            console.log("❌ No matching user found!");
+            console.log("Looking for hash:", passwordHash);
+            console.log("Available hashes:", users.map(u => u.password_hash));
             
-            passwordError.textContent = "User not found in database";
+            passwordError.textContent = "Incorrect password for selected role";
             passwordError.style.display = 'block';
             return;
         }
         
-        console.log("✅ Database authentication successful!");
-        console.log("User:", matchingUser);
+        console.log("✅ Authentication successful! User:", matchingUser);
         
-        // Authentication successful
+        // Proceed with connection
         appState.isHost = selectedRole === 'host';
         appState.userName = selectedRole === 'host' ? "Host" : "Guest";
         
@@ -177,8 +171,8 @@ async function handleConnect() {
         appState.sessionId = generateSessionId();
         appState.connectionTime = new Date();
         
-        console.log("Generated User ID:", appState.userId);
-        console.log("Generated Session ID:", appState.sessionId);
+        console.log("🆔 Generated User ID:", appState.userId);
+        console.log("🆔 Generated Session ID:", appState.sessionId);
         
         // Connect to session
         const sessionConnected = await connectToSupabase();
@@ -227,6 +221,55 @@ async function handleConnect() {
         connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
     }
 }
+
+// ==================== ADD THIS TEST FUNCTION ====================
+async function testConnection() {
+    console.log("🧪 TESTING CONNECTION...");
+    
+    // Test 1: Hash generation
+    console.log("\n1. Testing hash generation:");
+    const hostHash = await hashPassword('Mira4994Mira');
+    const guestHash = await hashPassword('LovingStrangers');
+    
+    console.log("Mira4994Mira ->", hostHash);
+    console.log("Expected: b10a8db164e0754105b7a99be72e3fe5");
+    console.log("Match?", hostHash === 'b10a8db164e0754105b7a99be72e3fe5');
+    
+    console.log("\nLovingStrangers ->", guestHash);
+    console.log("Expected: 8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a");
+    console.log("Match?", guestHash === '8f1b6c5e8e3a2d1c9b8a7f6e5d4c3b2a');
+    
+    // Test 2: Database connection
+    console.log("\n2. Testing database connection:");
+    const { data: users, error } = await supabaseClient.from('users').select('*');
+    
+    if (error) {
+        console.error("Database error:", error);
+    } else {
+        console.log("Users in database:", users);
+        
+        // Test 3: Check specific queries
+        console.log("\n3. Testing specific queries:");
+        
+        // Query for host
+        const { data: hosts } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('role', 'host');
+        
+        console.log("Hosts found:", hosts);
+        
+        // Query for guest  
+        const { data: guests } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('role', 'guest');
+            
+        console.log("Guests found:", guests);
+    }
+}
+
+// Call this from browser console: testConnection()
 
 // ==================== DATABASE SETUP FUNCTION ====================
 async function setupDatabase() {
