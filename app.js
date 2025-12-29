@@ -56,11 +56,13 @@ const typingUser = document.getElementById('typingUser');
 
 // Utility: Generate MD5 hash
 async function hashPassword(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('MD5', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    // Use the md5 library if available
+    if (typeof md5 !== 'undefined') {
+        return md5(password);
+    }
+    
+    // Fallback to the simple implementation
+    return md5Hash(password);
 }
 
 // Initialize the app
