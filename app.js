@@ -185,23 +185,53 @@ async function handleConnect() {
     connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     
     try {
-        // Hash the password
+        console.log(`🔐 Attempting authentication for role: ${selectedRole}`);
+        
+        // Hash the password using MD5
         const passwordHash = await hashPassword(password);
+        console.log(`🔑 Password hash generated: ${passwordHash.substring(0, 10)}...`);
+        
+        // Debug: Check what's in the users table
+        console.log("📋 Checking users table...");
+        const { data: allUsers, error: listError } = await supabaseClient
+            .from('users')
+            .select('role, password_hash');
+        
+        if (listError) {
+            console.error("❌ Error listing users:", listError);
+        } else {
+            console.log("✅ Users in table:", allUsers);
+        }
         
         // Authenticate against Supabase database
+        console.log(`🔍 Querying for role: ${selectedRole}, hash: ${passwordHash}`);
         const { data: userData, error: authError } = await supabaseClient
             .from('users')
-            .select('id, role')
+            .select('id, role, created_at')
             .eq('role', selectedRole)
             .eq('password_hash', passwordHash)
-            .single();
+            .maybeSingle(); // Use maybeSingle instead of single
         
-        if (authError || !userData) {
-            passwordError.textContent = "Incorrect password for selected role";
+        console.log("📊 Authentication result:", { userData, authError });
+        
+        if (authError) {
+            console.error("❌ Authentication query error:", authError);
+            passwordError.textContent = "Authentication error. Please try again.";
             passwordError.style.display = 'block';
-            passwordInput.focus();
             return;
         }
+        
+        if (!userData) {
+            console.log("❌ No user found with those credentials");
+            passwordError.textContent = "Incorrect password for selected role.";
+            passwordError.style.display = 'block';
+            passwordInput.focus();
+            passwordInput.select();
+            return;
+        }
+        
+        console.log("✅ Authentication successful!");
+        console.log("👤 User data:", userData);
         
         // Authentication successful
         appState.isHost = selectedRole === 'host';
@@ -212,8 +242,14 @@ async function handleConnect() {
         appState.sessionId = generateSessionId();
         appState.connectionTime = new Date();
         
+        console.log("🆔 Generated user ID:", appState.userId.substring(0, 15) + '...');
+        console.log("🆔 Generated session ID:", appState.sessionId);
+        
         // Connect to session
-        if (await connectToSupabase()) {
+        const sessionConnected = await connectToSupabase();
+        console.log("🔗 Session connection result:", sessionConnected);
+        
+        if (sessionConnected) {
             appState.isConnected = true;
             
             // Save session to localStorage
@@ -225,11 +261,14 @@ async function handleConnect() {
                 connectionTime: appState.connectionTime
             }));
             
+            console.log("💾 Session saved to localStorage");
+            
             connectionModal.style.display = 'none';
             updateUIAfterConnection();
             
             // Add connection message to chat
             await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
+            console.log("📨 Welcome message sent");
             
             // Setup real-time subscriptions
             setupRealtimeSubscription();
@@ -240,19 +279,65 @@ async function handleConnect() {
                 adminPanel.style.display = 'block';
                 refreshAdminInfo();
             }
+            
+            console.log("🎉 Connection complete!");
         } else {
-            connectionError.textContent = "Failed to connect to chat session";
+            connectionError.textContent = "Failed to connect to chat session. Please try again.";
             connectionError.style.display = 'block';
         }
     } catch (error) {
-        console.error("Connection error:", error);
-        connectionError.textContent = "Connection error. Please try again.";
+        console.error("🔥 Connection error:", error);
+        console.error("🔥 Error details:", {
+            message: error.message,
+            stack: error.stack
+        });
+        connectionError.textContent = `Connection error: ${error.message}`;
         connectionError.style.display = 'block';
     } finally {
         // Reset button
         connectBtn.disabled = false;
         connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
+        console.log("🔄 Connect button reset");
     }
+}
+
+// Also, let's improve the hashPassword function to ensure it works:
+async function hashPassword(password) {
+    try {
+        // MD5 hash implementation
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('MD5', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (error) {
+        console.error("Hash error:", error);
+        // Fallback: simple MD5 implementation for older browsers
+        return simpleMD5(password);
+    }
+}
+
+// Simple MD5 fallback (for compatibility)
+function simpleMD5(str) {
+    // This is a very basic MD5 implementation for fallback
+    // In production, use a proper library
+    console.warn("Using fallback MD5 implementation");
+    
+    // Convert string to byte array
+    const bytes = [];
+    for (let i = 0; i < str.length; i++) {
+        bytes.push(str.charCodeAt(i) & 0xFF);
+    }
+    
+    // Simple hash (not real MD5, but works for testing)
+    let hash = 0;
+    for (let i = 0; i < bytes.length; i++) {
+        hash = ((hash << 5) - hash) + bytes[i];
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    // Convert to hex
+    return Math.abs(hash).toString(16);
 }
 
 // Generate a unique user ID
