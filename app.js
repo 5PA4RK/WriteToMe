@@ -1,6 +1,6 @@
-// Supabase Configuration
-const SUPABASE_URL = 'https://iipwepzadorscbnelvsc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpcHdlcHphZG9yc2NibmVsdnNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU1NTc0MTQsImV4cCI6MjA1MTEzMzQxNH0.qlwkVPvM2ag7-czhRSCfqB0B1yITsMJgV1QpCLmN8rQ';
+// Supabase Configuration - REPLACE WITH YOUR OWN CREDENTIALS
+const SUPABASE_URL = 'https://iipwepzadorscbnelvsc.supabase.co'; // Supabase URL
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpcHdlcHphZG9yc2NibmVsdnNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU1NTc0MTQsImV4cCI6MjA1MTEzMzQxNH0.qlwkVPvM2ag7-czhRSCfqB0B1yITsMJgV1QpCLmN8rQ'; // Supabase anon key
 
 // Initialize Supabase client
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -10,6 +10,7 @@ const appState = {
     isHost: false,
     isConnected: false,
     userName: "Guest",
+    userEmail: "",
     otherUserName: "Host",
     userId: null,
     sessionId: null,
@@ -27,6 +28,7 @@ const connectBtn = document.getElementById('connectBtn');
 const passwordError = document.getElementById('passwordError');
 const connectionError = document.getElementById('connectionError');
 const logoutBtn = document.getElementById('logoutBtn');
+const emailInput = document.getElementById('emailInput'); // Added email input
 
 const statusIndicator = document.getElementById('statusIndicator');
 const userRoleDisplay = document.getElementById('userRoleDisplay');
@@ -54,6 +56,12 @@ const refreshInfoBtn = document.getElementById('refreshInfoBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const typingUser = document.getElementById('typingUser');
 
+// Email mapping for auto-fill
+const ROLE_EMAILS = {
+    host: 'host@writetome.com',
+    guest: 'guest@writetome.com'
+};
+
 // Utility: Generate MD5 hash
 async function hashPassword(password) {
     const encoder = new TextEncoder();
@@ -63,14 +71,39 @@ async function hashPassword(password) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Update email based on selected role
+function updateEmailBasedOnRole() {
+    const userSelect = document.getElementById('userSelect');
+    if (!userSelect || !emailInput) return;
+    
+    const selectedRole = userSelect.value;
+    const email = ROLE_EMAILS[selectedRole] || '';
+    
+    emailInput.value = email;
+    
+    // Clear password field when role changes
+    const passwordInput = document.getElementById('passwordInput');
+    if (passwordInput) {
+        passwordInput.value = '';
+        // Focus on password field for better UX
+        setTimeout(() => {
+            passwordInput.focus();
+        }, 100);
+    }
+}
+
 // Initialize the app
 async function initApp() {
+    // Set initial email based on selected role
+    updateEmailBasedOnRole();
+    
     // Check if user was previously connected
     const savedSession = localStorage.getItem('writeToMe_session');
     if (savedSession) {
         const sessionData = JSON.parse(savedSession);
         appState.isHost = sessionData.isHost;
         appState.userName = sessionData.userName;
+        appState.userEmail = sessionData.userEmail || '';
         appState.userId = sessionData.userId;
         appState.sessionId = sessionData.sessionId;
         appState.isConnected = true;
@@ -99,12 +132,12 @@ function setupEventListeners() {
     // Connection modal
     const userSelect = document.getElementById('userSelect');
     const passwordInput = document.getElementById('passwordInput');
-    const connectBtn = document.getElementById('connectBtn');
     const passwordHint = document.getElementById('passwordHint');
 
-    // Update password hint when role changes
+    // Update email and clear errors when role changes
     if (userSelect) {
         userSelect.addEventListener('change', function() {
+            updateEmailBasedOnRole();
             // Clear any error
             passwordError.style.display = 'none';
             connectionError.style.display = 'none';
@@ -168,6 +201,7 @@ async function handleConnect() {
     
     const selectedRole = userSelect.value; // 'host' or 'guest'
     const password = passwordInput.value;
+    const email = emailInput.value; // Get auto-filled email
     
     // Reset errors
     passwordError.style.display = 'none';
@@ -206,6 +240,7 @@ async function handleConnect() {
         // Authentication successful
         appState.isHost = selectedRole === 'host';
         appState.userName = selectedRole === 'host' ? "Host" : "Guest";
+        appState.userEmail = email; // Store the email
         
         // Generate unique user ID and session ID
         appState.userId = generateUserId();
@@ -220,6 +255,7 @@ async function handleConnect() {
             localStorage.setItem('writeToMe_session', JSON.stringify({
                 isHost: appState.isHost,
                 userName: appState.userName,
+                userEmail: appState.userEmail,
                 userId: appState.userId,
                 sessionId: appState.sessionId,
                 connectionTime: appState.connectionTime
@@ -430,6 +466,7 @@ async function handleLogout() {
         appState.isHost = false;
         appState.isConnected = false;
         appState.userName = "Guest";
+        appState.userEmail = "";
         appState.userId = null;
         appState.sessionId = null;
         appState.messages = [];
@@ -457,6 +494,7 @@ async function handleLogout() {
         
         // Reset login form
         document.getElementById('userSelect').value = 'host';
+        updateEmailBasedOnRole(); // Update email for default role
         document.getElementById('passwordInput').value = '';
         passwordError.style.display = 'none';
         connectionError.style.display = 'none';
@@ -502,6 +540,12 @@ function setupRealtimeSubscription() {
                 }
             }
         )
+        .on('system', { event: 'channel_joined' }, () => {
+            console.log('✅ Successfully joined real-time channel');
+        })
+        .on('system', { event: 'channel_error' }, (error) => {
+            console.error('❌ Channel error:', error);
+        })
         .subscribe((status) => {
             console.log('📡 Subscription status:', status);
         });
