@@ -10,7 +10,6 @@ const appState = {
     isHost: false,
     isConnected: false,
     userName: "Guest",
-    userEmail: "",
     otherUserName: "Host",
     userId: null,
     sessionId: null,
@@ -28,9 +27,6 @@ const connectBtn = document.getElementById('connectBtn');
 const passwordError = document.getElementById('passwordError');
 const connectionError = document.getElementById('connectionError');
 const logoutBtn = document.getElementById('logoutBtn');
-const emailInput = document.getElementById('emailInput');
-const userSelect = document.getElementById('userSelect');
-const passwordInput = document.getElementById('passwordInput');
 
 const statusIndicator = document.getElementById('statusIndicator');
 const userRoleDisplay = document.getElementById('userRoleDisplay');
@@ -58,74 +54,63 @@ const refreshInfoBtn = document.getElementById('refreshInfoBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const typingUser = document.getElementById('typingUser');
 
-// Email mapping based on role
-const EMAIL_MAPPING = {
-    host: 'host@writetome.com',
-    guest: 'guest@writetome.com'
-};
+// Utility: Generate MD5 hash
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('MD5', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 // Initialize the app
 async function initApp() {
-    // Set up event listeners FIRST
-    setupEventListeners();
-    
-    // Set initial email based on default role
-    updateEmailBasedOnRole();
-    
-    // Check for existing session
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    
-    if (session) {
-        // User is already authenticated
-        appState.userId = session.user.id;
-        appState.userEmail = session.user.email;
-        appState.userName = session.user.email.includes('host') ? 'Host' : 'Guest';
-        appState.isHost = session.user.email.includes('host');
+    // Check if user was previously connected
+    const savedSession = localStorage.getItem('writeToMe_session');
+    if (savedSession) {
+        const sessionData = JSON.parse(savedSession);
+        appState.isHost = sessionData.isHost;
+        appState.userName = sessionData.userName;
+        appState.userId = sessionData.userId;
+        appState.sessionId = sessionData.sessionId;
+        appState.isConnected = true;
         
-        // Try to restore session
-        await restoreUserSession(session.user);
+        // Try to reconnect to the session
+        if (await reconnectToSession()) {
+            connectionModal.style.display = 'none';
+            updateUIAfterConnection();
+            loadChatHistory();
+            loadCurrentImage();
+        } else {
+            // Session expired or invalid
+            localStorage.removeItem('writeToMe_session');
+            connectionModal.style.display = 'flex';
+        }
     } else {
         connectionModal.style.display = 'flex';
     }
-    
-    // Listen for auth state changes
-    supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-            await restoreUserSession(session.user);
-        } else if (event === 'SIGNED_OUT') {
-            handleLogout();
-        }
-    });
-}
 
-// Update email input based on selected role
-function updateEmailBasedOnRole() {
-    if (!userSelect || !emailInput) return;
-    
-    const role = userSelect.value;
-    const email = EMAIL_MAPPING[role] || '';
-    emailInput.value = email;
-    
-    // Clear password when role changes
-    if (passwordInput) {
-        passwordInput.value = '';
-    }
-    
-    // Focus on password field for better UX
-    if (passwordInput) {
-        setTimeout(() => {
-            passwordInput.focus();
-        }, 100);
-    }
+    // Set up event listeners
+    setupEventListeners();
 }
 
 // Set up all event listeners
 function setupEventListeners() {
-    // Update email when role changes
+    // Connection modal
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const passwordHint = document.getElementById('passwordHint');
+
+    // Update password hint when role changes
     if (userSelect) {
-        userSelect.addEventListener('change', updateEmailBasedOnRole);
+        userSelect.addEventListener('change', function() {
+            // Clear any error
+            passwordError.style.display = 'none';
+            connectionError.style.display = 'none';
+        });
     }
-    
+
     // Allow Enter key in password field
     if (passwordInput) {
         passwordInput.addEventListener('keypress', (e) => {
@@ -144,174 +129,135 @@ function setupEventListeners() {
     }
 
     // Chat functionality
-    if (messageInput) {
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
-        messageInput.addEventListener('input', handleTyping);
-    }
-    
-    if (sendMessageBtn) {
-        sendMessageBtn.addEventListener('click', sendMessage);
-    }
-    
-    if (clearChatBtn) {
-        clearChatBtn.addEventListener('click', clearChat);
-    }
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+    messageInput.addEventListener('input', handleTyping);
+    sendMessageBtn.addEventListener('click', sendMessage);
+    clearChatBtn.addEventListener('click', clearChat);
 
     // Image functionality
-    if (imagePlaceholder) {
-        imagePlaceholder.addEventListener('click', () => fileInput.click());
-        imagePlaceholder.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            imagePlaceholder.style.borderColor = 'var(--accent-orange)';
-            imagePlaceholder.style.backgroundColor = 'rgba(255, 152, 0, 0.1)';
-        });
-        imagePlaceholder.addEventListener('dragleave', () => {
-            imagePlaceholder.style.borderColor = 'var(--border-color)';
-            imagePlaceholder.style.backgroundColor = '';
-        });
-        imagePlaceholder.addEventListener('drop', handleImageDrop);
-    }
-    
-    if (fileInput) {
-        fileInput.addEventListener('change', handleFileSelect);
-    }
-    
-    if (uploadImageBtn) {
-        uploadImageBtn.addEventListener('click', uploadImageFromUrl);
-    }
-    
-    if (downloadImageBtn) {
-        downloadImageBtn.addEventListener('click', downloadImage);
-    }
-    
-    if (clearImageBtn) {
-        clearImageBtn.addEventListener('click', clearImage);
-    }
-    
-    if (imageUrlInput) {
-        imageUrlInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') uploadImageFromUrl();
-        });
-    }
+    imagePlaceholder.addEventListener('click', () => fileInput.click());
+    imagePlaceholder.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imagePlaceholder.style.borderColor = 'var(--accent-orange)';
+        imagePlaceholder.style.backgroundColor = 'rgba(255, 152, 0, 0.1)';
+    });
+    imagePlaceholder.addEventListener('dragleave', () => {
+        imagePlaceholder.style.borderColor = 'var(--border-color)';
+        imagePlaceholder.style.backgroundColor = '';
+    });
+    imagePlaceholder.addEventListener('drop', handleImageDrop);
+    fileInput.addEventListener('change', handleFileSelect);
+    uploadImageBtn.addEventListener('click', uploadImageFromUrl);
+    downloadImageBtn.addEventListener('click', downloadImage);
+    clearImageBtn.addEventListener('click', clearImage);
+    imageUrlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') uploadImageFromUrl();
+    });
 
     // Admin panel
-    if (adminToggle) {
-        adminToggle.addEventListener('click', toggleAdminPanel);
-    }
-    
-    if (refreshInfoBtn) {
-        refreshInfoBtn.addEventListener('click', refreshAdminInfo);
-    }
+    adminToggle.addEventListener('click', toggleAdminPanel);
+    refreshInfoBtn.addEventListener('click', refreshAdminInfo);
 }
 
 // Handle connection with Supabase authentication
 async function handleConnect() {
-    if (!emailInput || !passwordInput) return;
+    const userSelect = document.getElementById('userSelect');
+    const passwordInput = document.getElementById('passwordInput');
     
-    const email = emailInput.value;
+    const selectedRole = userSelect.value; // 'host' or 'guest'
     const password = passwordInput.value;
     
     // Reset errors
-    if (passwordError) passwordError.style.display = 'none';
-    if (connectionError) connectionError.style.display = 'none';
+    passwordError.style.display = 'none';
+    connectionError.style.display = 'none';
     
     if (!password) {
-        if (passwordError) {
-            passwordError.textContent = "Please enter a password";
-            passwordError.style.display = 'block';
-        }
-        if (passwordInput) passwordInput.focus();
-        return;
-    }
-    
-    // Validate email format
-    if (!email || !email.includes('@')) {
-        if (passwordError) {
-            passwordError.textContent = "Please select a valid role";
-            passwordError.style.display = 'block';
-        }
+        passwordError.textContent = "Please enter a password";
+        passwordError.style.display = 'block';
+        passwordInput.focus();
         return;
     }
     
     // Show loading state
-    if (connectBtn) {
-        connectBtn.disabled = true;
-        connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-    }
+    connectBtn.disabled = true;
+    connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
     
     try {
-        // Sign in with Supabase Auth
-        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
-            email: email,
-            password: password
-        });
+        // Hash the password
+        const passwordHash = await hashPassword(password);
         
-        if (authError) {
-            console.error("Auth error:", authError);
-            
-            let errorMessage = "Authentication failed. Please try again.";
-            
-            if (authError.message.includes('Invalid login credentials')) {
-                errorMessage = "Invalid password. Please check your password.";
-            } else if (authError.message.includes('Email not confirmed')) {
-                errorMessage = "Please confirm your email address first.";
-            }
-            
-            if (passwordError) {
-                passwordError.textContent = errorMessage;
-                passwordError.style.display = 'block';
-            }
+        // Authenticate against Supabase database
+        const { data: userData, error: authError } = await supabaseClient
+            .from('users')
+            .select('id, role')
+            .eq('role', selectedRole)
+            .eq('password_hash', passwordHash)
+            .single();
+        
+        if (authError || !userData) {
+            passwordError.textContent = "Incorrect password for selected role";
+            passwordError.style.display = 'block';
+            passwordInput.focus();
             return;
         }
         
         // Authentication successful
-        const user = authData.user;
-        const isHost = email.includes('host');
+        appState.isHost = selectedRole === 'host';
+        appState.userName = selectedRole === 'host' ? "Host" : "Guest";
         
-        appState.isHost = isHost;
-        appState.userName = isHost ? "Host" : "Guest";
-        appState.userEmail = user.email;
-        appState.userId = user.id;
+        // Generate unique user ID and session ID
+        appState.userId = generateUserId();
         appState.sessionId = generateSessionId();
         appState.connectionTime = new Date();
         
         // Connect to session
-        if (await connectToSession()) {
+        if (await connectToSupabase()) {
             appState.isConnected = true;
-            if (connectionModal) connectionModal.style.display = 'none';
+            
+            // Save session to localStorage
+            localStorage.setItem('writeToMe_session', JSON.stringify({
+                isHost: appState.isHost,
+                userName: appState.userName,
+                userId: appState.userId,
+                sessionId: appState.sessionId,
+                connectionTime: appState.connectionTime
+            }));
+            
+            connectionModal.style.display = 'none';
             updateUIAfterConnection();
             
-            // Add connection message
+            // Add connection message to chat
             await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
             
             // Setup real-time subscriptions
             setupRealtimeSubscription();
             setupImageSubscription();
             
-            if (appState.isHost && adminPanel) {
+            // If host, show admin panel
+            if (appState.isHost) {
                 adminPanel.style.display = 'block';
                 refreshAdminInfo();
             }
         } else {
-            if (connectionError) {
-                connectionError.textContent = "Failed to connect to chat session";
-                connectionError.style.display = 'block';
-            }
+            connectionError.textContent = "Failed to connect to chat session";
+            connectionError.style.display = 'block';
         }
     } catch (error) {
         console.error("Connection error:", error);
-        if (connectionError) {
-            connectionError.textContent = "Connection error. Please try again.";
-            connectionError.style.display = 'block';
-        }
+        connectionError.textContent = "Connection error. Please try again.";
+        connectionError.style.display = 'block';
     } finally {
-        if (connectBtn) {
-            connectBtn.disabled = false;
-            connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
-        }
+        // Reset button
+        connectBtn.disabled = false;
+        connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
     }
+}
+
+// Generate a unique user ID
+function generateUserId() {
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
 // Generate a session ID
@@ -319,10 +265,10 @@ function generateSessionId() {
     return 'session_' + Date.now().toString(36);
 }
 
-// Connect to/create session in database
-async function connectToSession() {
+// Connect to Supabase and create/join session
+async function connectToSupabase() {
     try {
-        // Check if active session exists
+        // Check if session exists
         const { data: existingSessions, error: checkError } = await supabaseClient
             .from('sessions')
             .select('*')
@@ -331,6 +277,7 @@ async function connectToSession() {
         
         if (checkError) throw checkError;
         
+        // If no active session, create one (Host only)
         if (existingSessions.length === 0) {
             if (appState.isHost) {
                 // Host creates a new session
@@ -351,7 +298,7 @@ async function connectToSession() {
                 if (sessionError) throw sessionError;
                 return true;
             } else {
-                // Guest cannot create session
+                // Guest cannot create session, only join
                 alert("No active session found. Please ask the Host to create a session first.");
                 return false;
             }
@@ -385,83 +332,68 @@ async function connectToSession() {
             return true;
         }
     } catch (error) {
-        console.error("Error connecting to session:", error);
+        console.error("Error connecting to Supabase:", error);
         return false;
     }
 }
 
-// Restore user session
-async function restoreUserSession(user) {
+// Reconnect to existing session
+async function reconnectToSession() {
     try {
-        // Find active session for this user
-        const { data: sessions, error } = await supabaseClient
+        // Check if session still exists
+        const { data: session, error } = await supabaseClient
             .from('sessions')
             .select('*')
-            .or(`host_id.eq.${user.id},guest_id.eq.${user.id}`)
+            .eq('session_id', appState.sessionId)
             .eq('is_active', true)
-            .limit(1);
+            .single();
         
-        if (error || !sessions || sessions.length === 0) {
-            // No active session, show connection modal
-            if (connectionModal) connectionModal.style.display = 'flex';
-            return;
+        if (error || !session) return false;
+        
+        // Check if user is still in session
+        if (appState.isHost) {
+            if (session.host_id !== appState.userId) return false;
+            appState.otherUserName = session.guest_name || "Guest";
+        } else {
+            if (session.guest_id !== appState.userId) return false;
+            appState.otherUserName = session.host_name;
         }
         
-        const session = sessions[0];
-        appState.sessionId = session.session_id;
-        appState.isHost = session.host_id === user.id;
-        appState.userName = appState.isHost ? "Host" : "Guest";
-        appState.userEmail = user.email;
-        appState.userId = user.id;
-        appState.otherUserName = appState.isHost ? 
-            (session.guest_name || "Guest") : 
-            session.host_name;
-        appState.isConnected = true;
-        
-        if (connectionModal) connectionModal.style.display = 'none';
-        updateUIAfterConnection();
-        loadChatHistory();
-        loadCurrentImage();
-        
+        // Setup real-time subscriptions
         setupRealtimeSubscription();
         setupImageSubscription();
         
-        if (appState.isHost && adminPanel) {
-            adminPanel.style.display = 'block';
-            refreshAdminInfo();
-        }
+        return true;
     } catch (error) {
-        console.error("Error restoring session:", error);
-        if (connectionModal) connectionModal.style.display = 'flex';
+        console.error("Error reconnecting:", error);
+        return false;
     }
 }
 
 // Update UI after connection
 function updateUIAfterConnection() {
-    if (statusIndicator) statusIndicator.classList.remove('offline');
-    if (userRoleDisplay) userRoleDisplay.textContent = `${appState.userName} (Connected)`;
-    if (currentUserSpan) currentUserSpan.textContent = appState.userName;
+    statusIndicator.classList.remove('offline');
+    userRoleDisplay.textContent = `${appState.userName} (Connected)`;
+    currentUserSpan.textContent = appState.userName;
     
     // Show logout button
-    if (logoutBtn) logoutBtn.style.display = 'flex';
+    logoutBtn.style.display = 'flex';
     
     // Enable chat controls
-    if (messageInput) {
-        messageInput.disabled = false;
-        messageInput.focus();
-    }
-    if (sendMessageBtn) sendMessageBtn.disabled = false;
+    messageInput.disabled = false;
+    sendMessageBtn.disabled = false;
+    messageInput.focus();
     
     // Enable image controls
-    if (uploadImageBtn) uploadImageBtn.disabled = false;
-    if (imageUrlInput) imageUrlInput.disabled = false;
+    uploadImageBtn.disabled = false;
+    imageUrlInput.disabled = false;
 }
 
 // Handle logout
 async function handleLogout() {
     if (confirm("Are you sure you want to logout?")) {
-        // Sign out from Supabase Auth
-        await supabaseClient.auth.signOut();
+        // Remove session from localStorage
+        localStorage.removeItem('writeToMe_session');
         
         // Update session in database
         if (appState.isConnected && appState.sessionId) {
@@ -498,7 +430,6 @@ async function handleLogout() {
         appState.isHost = false;
         appState.isConnected = false;
         appState.userName = "Guest";
-        appState.userEmail = "";
         appState.userId = null;
         appState.sessionId = null;
         appState.messages = [];
@@ -506,34 +437,29 @@ async function handleLogout() {
         appState.realtimeSubscription = null;
         
         // Reset UI
-        if (statusIndicator) statusIndicator.classList.add('offline');
-        if (userRoleDisplay) userRoleDisplay.textContent = "Disconnected";
-        if (currentUserSpan) currentUserSpan.textContent = "Guest";
-        if (logoutBtn) logoutBtn.style.display = 'none';
-        if (messageInput) messageInput.disabled = true;
-        if (sendMessageBtn) sendMessageBtn.disabled = true;
-        if (uploadImageBtn) uploadImageBtn.disabled = true;
-        if (imageUrlInput) imageUrlInput.disabled = true;
-        if (downloadImageBtn) downloadImageBtn.disabled = true;
-        if (adminPanel) adminPanel.style.display = 'none';
+        statusIndicator.classList.add('offline');
+        userRoleDisplay.textContent = "Disconnected";
+        currentUserSpan.textContent = "Guest";
+        logoutBtn.style.display = 'none';
+        messageInput.disabled = true;
+        sendMessageBtn.disabled = true;
+        uploadImageBtn.disabled = true;
+        imageUrlInput.disabled = true;
+        downloadImageBtn.disabled = true;
+        adminPanel.style.display = 'none';
         
         // Clear chat and image
-        if (chatMessages) {
-            chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
-        }
+        chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
         clearImage();
         
         // Show connection modal
-        if (connectionModal) connectionModal.style.display = 'flex';
+        connectionModal.style.display = 'flex';
         
         // Reset login form
-        if (userSelect) {
-            userSelect.value = 'host';
-            updateEmailBasedOnRole();
-        }
-        if (passwordInput) passwordInput.value = '';
-        if (passwordError) passwordError.style.display = 'none';
-        if (connectionError) connectionError.style.display = 'none';
+        document.getElementById('userSelect').value = 'host';
+        document.getElementById('passwordInput').value = '';
+        passwordError.style.display = 'none';
+        connectionError.style.display = 'none';
     }
 }
 
@@ -603,7 +529,7 @@ function setupImageSubscription() {
                     console.log('✅ New image detected');
                     appState.currentImage = updatedSession.current_image;
                     displayImage(updatedSession.current_image);
-                    if (downloadImageBtn) downloadImageBtn.disabled = false;
+                    downloadImageBtn.disabled = false;
                     addSystemMessage(`${appState.otherUserName} shared an image.`);
                 }
             }
@@ -623,7 +549,7 @@ async function loadChatHistory() {
         if (error) throw error;
         
         // Clear current messages
-        if (chatMessages) chatMessages.innerHTML = '';
+        chatMessages.innerHTML = '';
         appState.messages = [];
         
         // Display each message
@@ -656,7 +582,7 @@ async function loadCurrentImage() {
         if (session.current_image) {
             appState.currentImage = session.current_image;
             displayImage(session.current_image);
-            if (downloadImageBtn) downloadImageBtn.disabled = false;
+            downloadImageBtn.disabled = false;
         }
     } catch (error) {
         console.error("Error loading current image:", error);
@@ -690,8 +616,6 @@ async function saveMessageToDB(senderName, messageText) {
 
 // Send a chat message
 async function sendMessage() {
-    if (!messageInput) return;
-    
     const messageText = messageInput.value.trim();
     if (!messageText) return;
     
@@ -719,8 +643,6 @@ async function sendMessage() {
 
 // Display a message in the chat
 function displayMessage(message) {
-    if (!chatMessages) return;
-    
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${message.type}`;
     messageDiv.id = `msg-${message.id}`;
@@ -737,8 +659,6 @@ function displayMessage(message) {
 
 // Add a system message
 function addSystemMessage(text) {
-    if (!chatMessages) return;
-    
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message received';
     
@@ -776,7 +696,7 @@ async function clearChat() {
             if (error) throw error;
             
             // Clear local chat
-            if (chatMessages) chatMessages.innerHTML = '';
+            chatMessages.innerHTML = '';
             appState.messages = [];
             addSystemMessage("Chat history has been cleared.");
         } catch (error) {
@@ -789,10 +709,8 @@ async function clearChat() {
 // Handle image drop
 function handleImageDrop(e) {
     e.preventDefault();
-    if (imagePlaceholder) {
-        imagePlaceholder.style.borderColor = 'var(--border-color)';
-        imagePlaceholder.style.backgroundColor = '';
-    }
+    imagePlaceholder.style.borderColor = 'var(--border-color)';
+    imagePlaceholder.style.backgroundColor = '';
     
     const files = e.dataTransfer.files;
     if (files.length > 0) {
@@ -827,7 +745,7 @@ function loadImageFile(file) {
         displayImage(appState.currentImage);
         
         // Enable download button
-        if (downloadImageBtn) downloadImageBtn.disabled = false;
+        downloadImageBtn.disabled = false;
         
         // Save image to database
         await saveImageToDB(appState.currentImage);
@@ -840,8 +758,6 @@ function loadImageFile(file) {
 
 // Upload image from URL
 async function uploadImageFromUrl() {
-    if (!imageUrlInput) return;
-    
     const url = imageUrlInput.value.trim();
     if (!url) return;
     
@@ -856,7 +772,7 @@ async function uploadImageFromUrl() {
     displayImage(url);
     
     // Enable download button
-    if (downloadImageBtn) downloadImageBtn.disabled = false;
+    downloadImageBtn.disabled = false;
     
     // Save image to database
     await saveImageToDB(url);
@@ -887,8 +803,6 @@ async function saveImageToDB(imageData) {
 
 // Display image in preview
 function displayImage(src) {
-    if (!imagePreview || !imagePlaceholder) return;
-    
     imagePreview.src = src;
     imagePreview.style.display = 'block';
     imagePlaceholder.style.display = 'none';
@@ -922,9 +836,9 @@ async function clearImage() {
             
             // Clear local state
             appState.currentImage = null;
-            if (imagePreview) imagePreview.style.display = 'none';
-            if (imagePlaceholder) imagePlaceholder.style.display = 'flex';
-            if (downloadImageBtn) downloadImageBtn.disabled = true;
+            imagePreview.style.display = 'none';
+            imagePlaceholder.style.display = 'flex';
+            downloadImageBtn.disabled = true;
             
             // Add system message
             addSystemMessage(`${appState.userName} cleared the image.`);
@@ -938,23 +852,19 @@ async function clearImage() {
 // Toggle admin panel visibility
 function toggleAdminPanel() {
     appState.adminVisible = !appState.adminVisible;
-    if (adminContent) adminContent.classList.toggle('show', appState.adminVisible);
+    adminContent.classList.toggle('show', appState.adminVisible);
     
-    if (adminToggle) {
-        const chevron = adminToggle.querySelector('i.fa-chevron-down');
-        if (chevron) {
-            if (appState.adminVisible) {
-                chevron.className = 'fas fa-chevron-up';
-            } else {
-                chevron.className = 'fas fa-chevron-down';
-            }
-        }
+    const chevron = adminToggle.querySelector('i.fa-chevron-down');
+    if (appState.adminVisible) {
+        chevron.className = 'fas fa-chevron-up';
+    } else {
+        chevron.className = 'fas fa-chevron-down';
     }
 }
 
 // Refresh admin information
 async function refreshAdminInfo() {
-    if (!appState.isHost || !adminInfo) return;
+    if (!appState.isHost) return;
     
     try {
         // Get session info from database
@@ -1004,9 +914,7 @@ async function refreshAdminInfo() {
         `;
     } catch (error) {
         console.error("Error refreshing admin info:", error);
-        if (adminInfo) {
-            adminInfo.innerHTML = `<div class="info-card"><p>Error loading admin information.</p></div>`;
-        }
+        adminInfo.innerHTML = `<div class="info-card"><p>Error loading admin information.</p></div>`;
     }
 }
 
