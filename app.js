@@ -22,7 +22,7 @@ const appState = {
     realtimeSubscription: null
 };
 
-// DOM Elements
+// DOM Elements (same as before)
 const connectionModal = document.getElementById('connectionModal');
 const connectBtn = document.getElementById('connectBtn');
 const passwordError = document.getElementById('passwordError');
@@ -58,11 +58,7 @@ const refreshInfoBtn = document.getElementById('refreshInfoBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 const typingUser = document.getElementById('typingUser');
 
-// Password configuration - now using Supabase Auth instead of MD5
-const PASSWORD_CONFIG = {
-    host: "Mira4994Mira",
-    guest: "LovingStarngers"
-};
+// NO PASSWORD CONFIGURATION - All passwords handled server-side by Supabase
 
 // Initialize the app
 async function initApp() {
@@ -155,13 +151,310 @@ function setupEventListeners() {
 
 // Handle connection with Supabase authentication
 async function handleConnect() {
-    const selectedRole = userSelect.value;
     const email = emailInput.value;
     const password = passwordInput.value;
     
     // Reset errors
     passwordError.style.display = 'none';
     connectionError.style.display = 'none';
+    
+    if (!password) {
+        passwordError.textContent = "Please enter a password";
+        passwordError.style.display = 'block';
+        passwordInput.focus();
+        return;
+    }
+    
+    // Show loading state
+    connectBtn.disabled = true;
+    connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
+    
+    try {
+        // Sign in with Supabase Auth
+        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+        
+        if (authError) {
+            console.error("Auth error:", authError);
+            
+            // Check specific error types
+            if (authError.message.includes('Invalid login credentials')) {
+                passwordError.textContent = "Invalid email or password. Please check your credentials.";
+                passwordError.style.display = 'block';
+            } else if (authError.message.includes('Email not confirmed')) {
+                passwordError.textContent = "Email not confirmed. Please check your email to confirm your account.";
+                passwordError.style.display = 'block';
+            } else {
+                passwordError.textContent = "Authentication failed. Please try again.";
+                passwordError.style.display = 'block';
+            }
+            return;
+        }
+        
+        // Authentication successful
+        const user = authData.user;
+        const isHost = email.includes('host');
+        
+        appState.isHost = isHost;
+        appState.userName = isHost ? "Host" : "Guest";
+        appState.userEmail = user.email;
+        appState.userId = user.id;
+        appState.sessionId = generateSessionId();
+        appState.connectionTime = new Date();
+        
+        // Connect to session
+        if (await connectToSession()) {
+            appState.isConnected = true;
+            connectionModal.style.display = 'none';
+            updateUIAfterConnection();
+            
+            // Add connection message
+            await saveMessageToDB('System', `${appState.userName} has connected to the chat.`);
+            
+            // Setup real-time subscriptions
+            setupRealtimeSubscription();
+            setupImageSubscription();
+            
+            if (appState.isHost) {
+                adminPanel.style.display = 'block';
+                refreshAdminInfo();
+            }
+        } else {
+            connectionError.textContent = "Failed to connect to chat session";
+            connectionError.style.display = 'block';
+        }
+    } catch (error) {
+        console.error("Connection error:", error);
+        connectionError.textContent = "Connection error. Please try again.";
+        connectionError.style.display = 'block';
+    } finally {
+        connectBtn.disabled = false;
+        connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect';
+    }
+}
+
+// Generate a session ID
+function generateSessionId() {
+    return 'session_' + Date.now().toString(36);
+}
+
+// Connect to/create session in database
+async function connectToSession() {
+    try {
+        // Check if active session exists
+        const { data: existingSessions, error: checkError } = await supabaseClient
+            .from('sessions')
+            .select('*')
+            .eq('is_active', true)
+            .limit(1);
+        
+        if (checkError) throw checkError;
+        
+        if (existingSessions.length === 0) {
+            if (appState.isHost) {
+                // Host creates a new session
+                const { data: newSession, error: sessionError } = await supabaseClient
+                    .from('sessions')
+                    .insert([
+                        {
+                            session_id: appState.sessionId,
+                            host_id: appState.userId,
+                            host_name: appState.userName,
+                            is_active: true,
+                            created_at: new Date().toISOString()
+                        }
+                    ])
+                    .select()
+                    .single();
+                
+                if (sessionError) throw sessionError;
+                return true;
+            } else {
+                // Guest cannot create session
+                alert("No active session found. Please ask the Host to create a session first.");
+                return false;
+            }
+        } else {
+            // Join existing session
+            const session = existingSessions[0];
+            
+            // Check if session already has 2 users
+            if (session.guest_id && session.guest_id !== appState.userId) {
+                alert("Session is full. Only 2 users can connect at a time.");
+                return false;
+            }
+            
+            // Update session with guest info
+            if (!appState.isHost) {
+                const { error: updateError } = await supabaseClient
+                    .from('sessions')
+                    .update({
+                        guest_id: appState.userId,
+                        guest_name: appState.userName,
+                        guest_connected_at: new Date().toISOString()
+                    })
+                    .eq('session_id', session.session_id);
+                
+                if (updateError) throw updateError;
+            }
+            
+            appState.sessionId = session.session_id;
+            appState.otherUserName = appState.isHost ? (session.guest_name || "Guest") : session.host_name;
+            
+            return true;
+        }
+    } catch (error) {
+        console.error("Error connecting to session:", error);
+        return false;
+    }
+}
+
+// Restore user session
+async function restoreUserSession(user) {
+    try {
+        // Find active session for this user
+        const { data: sessions, error } = await supabaseClient
+            .from('sessions')
+            .select('*')
+            .or(`host_id.eq.${user.id},guest_id.eq.${user.id}`)
+            .eq('is_active', true)
+            .limit(1);
+        
+        if (error || !sessions || sessions.length === 0) {
+            // No active session, show connection modal
+            connectionModal.style.display = 'flex';
+            return;
+        }
+        
+        const session = sessions[0];
+        appState.sessionId = session.session_id;
+        appState.isHost = session.host_id === user.id;
+        appState.userName = appState.isHost ? "Host" : "Guest";
+        appState.userEmail = user.email;
+        appState.userId = user.id;
+        appState.otherUserName = appState.isHost ? 
+            (session.guest_name || "Guest") : 
+            session.host_name;
+        appState.isConnected = true;
+        
+        connectionModal.style.display = 'none';
+        updateUIAfterConnection();
+        loadChatHistory();
+        loadCurrentImage();
+        
+        setupRealtimeSubscription();
+        setupImageSubscription();
+        
+        if (appState.isHost) {
+            adminPanel.style.display = 'block';
+            refreshAdminInfo();
+        }
+    } catch (error) {
+        console.error("Error restoring session:", error);
+        connectionModal.style.display = 'flex';
+    }
+}
+
+// Update UI after connection
+function updateUIAfterConnection() {
+    statusIndicator.classList.remove('offline');
+    userRoleDisplay.textContent = `${appState.userName} (Connected)`;
+    currentUserSpan.textContent = appState.userName;
+    
+    // Show logout button
+    logoutBtn.style.display = 'flex';
+    
+    // Enable chat controls
+    messageInput.disabled = false;
+    sendMessageBtn.disabled = false;
+    messageInput.focus();
+    
+    // Enable image controls
+    uploadImageBtn.disabled = false;
+    imageUrlInput.disabled = false;
+}
+
+// Handle logout
+async function handleLogout() {
+    if (confirm("Are you sure you want to logout?")) {
+        // Sign out from Supabase Auth
+        await supabaseClient.auth.signOut();
+        
+        // Update session in database
+        if (appState.isConnected && appState.sessionId) {
+            try {
+                if (appState.isHost) {
+                    // Host leaves - end the session
+                    await supabaseClient
+                        .from('sessions')
+                        .update({ 
+                            is_active: false, 
+                            ended_at: new Date().toISOString(),
+                            guest_id: null,
+                            guest_name: null,
+                            guest_connected_at: null
+                        })
+                        .eq('session_id', appState.sessionId);
+                } else {
+                    // Guest leaves - remove guest from session
+                    await supabaseClient
+                        .from('sessions')
+                        .update({ 
+                            guest_id: null, 
+                            guest_name: null, 
+                            guest_connected_at: null 
+                        })
+                        .eq('session_id', appState.sessionId);
+                }
+            } catch (error) {
+                console.error("Error updating session on logout:", error);
+            }
+        }
+        
+        // Reset app state
+        appState.isHost = false;
+        appState.isConnected = false;
+        appState.userName = "Guest";
+        appState.userEmail = "";
+        appState.userId = null;
+        appState.sessionId = null;
+        appState.messages = [];
+        appState.currentImage = null;
+        appState.realtimeSubscription = null;
+        
+        // Reset UI
+        statusIndicator.classList.add('offline');
+        userRoleDisplay.textContent = "Disconnected";
+        currentUserSpan.textContent = "Guest";
+        logoutBtn.style.display = 'none';
+        messageInput.disabled = true;
+        sendMessageBtn.disabled = true;
+        uploadImageBtn.disabled = true;
+        imageUrlInput.disabled = true;
+        downloadImageBtn.disabled = true;
+        adminPanel.style.display = 'none';
+        
+        // Clear chat and image
+        chatMessages.innerHTML = '<div class="message received"><div class="message-sender">System</div><div>Welcome to WriteToMe! This is a secure chat room for two people only.</div><div class="message-time">Just now</div></div>';
+        clearImage();
+        
+        // Show connection modal
+        connectionModal.style.display = 'flex';
+        
+        // Reset login form
+        userSelect.value = 'host';
+        updateEmailBasedOnRole();
+        passwordInput.value = '';
+        passwordError.style.display = 'none';
+        connectionError.style.display = 'none';
+    }
+}
+
+// [ALL OTHER FUNCTIONS REMAIN THE SAME AS YOUR ORIGINAL CODE]
+// setupRealtimeSubscription, loadChatHistory, saveMessageToDB, etc.
+
     
     if (!password) {
         passwordError.textContent = "Please enter a password";
