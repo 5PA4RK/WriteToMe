@@ -10,49 +10,51 @@
 </head>
 <body>
     <!-- Connection Modal -->
-    <div id="connectionModal" class="connection-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2><i class="fas fa-user-shield"></i> WriteToMe - Secure Connection</h2>
-            </div>
-            <div class="modal-body">
-                <div class="login-form">
-                    <div class="form-group">
-                        <label for="userSelect"><i class="fas fa-user"></i> Select Role:</label>
-                        <select id="userSelect" class="form-input">
-                            <option value="host">Host</option>
-                            <option value="guest">Guest</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="emailInput"><i class="fas fa-envelope"></i> Email:</label>
-                        <input type="email" id="emailInput" class="form-input" placeholder="Email will auto-fill based on role" readonly>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="passwordInput"><i class="fas fa-lock"></i> Password:</label>
-                        <input type="password" id="passwordInput" class="form-input" placeholder="Enter password" autocomplete="off">
-<div class="password-hint" id="passwordHint">
-    <i class="fas fa-info-circle"></i> Enter the password for your selected role
-</div>
-                    </div>
-                    
-                    <div id="passwordError" class="error-message" style="display: none;">
-                        Incorrect password for selected role.
-                    </div>
-                    
-                    <div id="connectionError" class="error-message" style="display: none;">
-                        Connection error. Please try again.
-                    </div>
-                    
-                    <button id="connectBtn" class="btn" style="width: 100%; margin-top: 20px;">
-                        <i class="fas fa-plug"></i> Connect
-                    </button>
+<!-- Connection Modal -->
+<div id="connectionModal" class="connection-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-user-shield"></i> WriteToMe - Secure Connection</h2>
+        </div>
+        <div class="modal-body">
+            <div class="login-form">
+                <div class="form-group">
+                    <label for="userSelect"><i class="fas fa-user"></i> Select Role:</label>
+                    <select id="userSelect" class="form-input">
+                        <option value="host">Host</option>
+                        <option value="guest">Guest</option>
+                    </select>
                 </div>
+                
+                <!-- ADD THIS EMAIL FIELD -->
+                <div class="form-group">
+                    <label for="emailInput"><i class="fas fa-envelope"></i> Email (auto-filled):</label>
+                    <input type="text" id="emailInput" class="form-input" placeholder="Email will auto-fill" readonly>
+                </div>
+                
+                <div class="form-group">
+                    <label for="passwordInput"><i class="fas fa-lock"></i> Password:</label>
+                    <input type="password" id="passwordInput" class="form-input" placeholder="Enter password" autocomplete="off">
+                    <div class="password-hint" id="passwordHint">
+                        <i class="fas fa-info-circle"></i> Enter the password for your selected role
+                    </div>
+                </div>
+                
+                <div id="passwordError" class="error-message" style="display: none;">
+                    Incorrect password for selected role.
+                </div>
+                
+                <div id="connectionError" class="error-message" style="display: none;">
+                    Connection error. Please try again.
+                </div>
+                
+                <button id="connectBtn" class="btn" style="width: 100%; margin-top: 20px;">
+                    <i class="fas fa-plug"></i> Connect
+                </button>
             </div>
         </div>
     </div>
+</div>
 
     <header>
         <div class="container">
@@ -156,7 +158,7 @@
 
     <footer>
         <div class="container">
-            <p>WriteToMe &copy; 2023 - Secure Two-Person Communication Platform | End-to-End Encrypted</p>
+            <p>WriteToMe &copy; 2025 - Secure Two-Person Communication Platform | End-to-End Encrypted</p>
         </div>
     </footer>
 
